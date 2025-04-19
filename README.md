@@ -9,5 +9,5 @@ python download_dataset.py
 
 Load pre-trained ResNet18 ConvNet:
 ```bash
-python download_dataset.py
+python load_pretrained_model.py
 ```
