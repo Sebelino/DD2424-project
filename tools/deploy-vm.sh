@@ -1,0 +1,23 @@
+#!/bin/bash
+
+ZONE="us-central1-a"
+INSTANCE_NAME="deeplearning-vm"
+MACHINE_TYPE="n1-standard-4"  # 4 vCPUs, 15 GB RAM
+GPU_TYPE="nvidia-tesla-t4"
+GPU_COUNT=1
+BOOT_DISK_SIZE="100GB"
+IMAGE_FAMILY="pytorch-latest-gpu"  # Preinstalled with PyTorch, CUDA
+IMAGE_PROJECT="deeplearning-platform-release"
+
+# Create the instance
+gcloud compute instances create "$INSTANCE_NAME" \
+  --zone="$ZONE" \
+  --machine-type="$MACHINE_TYPE" \
+  --accelerator=type="$GPU_TYPE",count="$GPU_COUNT" \
+  --image-family="$IMAGE_FAMILY" \
+  --image-project="$IMAGE_PROJECT" \
+  --maintenance-policy=TERMINATE \
+  --boot-disk-size="$BOOT_DISK_SIZE" \
+  --metadata="install-nvidia-driver=True" \
+  --scopes=https://www.googleapis.com/auth/cloud-platform \
+  --preemptible
