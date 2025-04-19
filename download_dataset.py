@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 
 import os
-import urllib.request
 import tarfile
+import urllib.request
+
 from tqdm import tqdm
 
 # Constants
@@ -11,6 +12,7 @@ ANNOTATIONS_URL = "https://www.robots.ox.ac.uk/~vgg/data/pets/data/annotations.t
 DATA_DIR = "data/oxford-iiit-pet"
 IMAGES_TAR = os.path.join(DATA_DIR, "images.tar.gz")
 ANNOTATIONS_TAR = os.path.join(DATA_DIR, "annotations.tar.gz")
+
 
 def download(url, dest_path):
     # Progress bar class for reporthook
@@ -25,11 +27,13 @@ def download(url, dest_path):
         urllib.request.urlretrieve(url, dest_path, reporthook=t.update_to)
     print(f"Saved to {dest_path}")
 
+
 def extract(tar_path, extract_to):
     print(f"Extracting {tar_path}...")
     with tarfile.open(tar_path, 'r:gz') as tar:
         tar.extractall(path=extract_to)
     print(f"Extracted to {extract_to}")
+
 
 def maybe_download_and_extract():
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -59,6 +63,7 @@ def maybe_download_and_extract():
         extract(ANNOTATIONS_TAR, DATA_DIR)
     else:
         print(f"{annotations_dir} already extracted. Skipping.")
+
 
 if __name__ == "__main__":
     maybe_download_and_extract()
