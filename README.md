@@ -7,7 +7,6 @@ Download Oxford-IIIT Pet Dataset:
 python download_dataset.py
 ```
 
-Load pre-trained ResNet18 ConvNet:
-```bash
-python load_pretrained_model.py
-```
+Use ResNet18 ConvNet for classifying images from the dataset:
+
+[classify_example.ipynb](./classify_example.ipynb)
