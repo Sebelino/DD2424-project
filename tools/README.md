@@ -39,7 +39,7 @@ gcloud compute zones list --filter="region:(us-*)"
 
 ## Create VM
 
-Create a VM instance in the zone you selected above:
+Create a dedicated L4-GPU VM instance in the zone you selected above:
 
 ```bash
 ./deploy-vm.sh L4
