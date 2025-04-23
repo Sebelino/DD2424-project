@@ -1,6 +1,7 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-ZONE="us-central1-a"
+set -Eeuo pipefail
+
 INSTANCE_NAME="deeplearning-vm"
 MACHINE_TYPE="n1-standard-4"  # 4 vCPUs, 15 GB RAM
 GPU_TYPE="nvidia-tesla-t4"
@@ -11,7 +12,6 @@ IMAGE_PROJECT="deeplearning-platform-release"
 
 # Create the instance
 gcloud compute instances create "$INSTANCE_NAME" \
-  --zone="$ZONE" \
   --machine-type="$MACHINE_TYPE" \
   --accelerator=type="$GPU_TYPE",count="$GPU_COUNT" \
   --image-family="$IMAGE_FAMILY" \
@@ -21,3 +21,5 @@ gcloud compute instances create "$INSTANCE_NAME" \
   --metadata="install-nvidia-driver=True" \
   --scopes=https://www.googleapis.com/auth/cloud-platform \
   --preemptible
+
+gcloud compute instances list

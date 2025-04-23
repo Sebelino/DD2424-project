@@ -1,3 +1,5 @@
 #!/usr/bin/env bash
 
-gcloud compute ssh deeplearning-vm --zone=us-central1-a
+VM_NAME=deeplearning-vm
+
+gcloud compute ssh "$VM_NAME"

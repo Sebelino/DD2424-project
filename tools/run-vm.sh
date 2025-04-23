@@ -3,14 +3,14 @@
 set -Eeuo pipefail
 
 VM_NAME="deeplearning-vm"
-ZONE="us-central1-a"
+PORT=8888
 
 # Check if VM is running
-VM_STATUS=$(gcloud compute instances describe "$VM_NAME" --zone="$ZONE" --format='get(status)')
+vm_status=$(gcloud compute instances describe "$VM_NAME" --format='get(status)')
 
-if [ "$VM_STATUS" != "RUNNING" ]; then
+if [ "$vm_status" != "RUNNING" ]; then
   echo "Starting VM..."
-  gcloud compute instances start "$VM_NAME" --zone="$ZONE"
+  gcloud compute instances start "$VM_NAME"
 else
   echo "VM is already running."
 fi
@@ -18,7 +18,7 @@ fi
 # SSH into VM with port forwarding
 echo "Connecting to VM with port forwarding..."
 
-gcloud compute ssh "$VM_NAME" --zone="$ZONE" -- -T << 'EOF'
+gcloud compute ssh "$VM_NAME" -- -T << 'EOF'
 # Start Jupyter Notebook in the background if not already running
 if ! pgrep -f "jupyter-notebook" > /dev/null; then
   echo "Starting Jupyter Notebook server..."
@@ -29,13 +29,14 @@ else
 fi
 EOF
 
-echo "Starting port forwarding on localhost:8888..."
+echo "Starting port forwarding on localhost:${PORT}..."
 
-gcloud compute ssh "$VM_NAME" --zone="$ZONE" -- -N -L 8888:localhost:8888 &
+gcloud compute ssh "$VM_NAME" -- -N -L ${PORT}:localhost:${PORT} &
 PORT_FWD_PID=$!
 
-echo "Connecting interactively to the VM (CTRL+D to exit)..."
-gcloud compute ssh "$VM_NAME" --zone="$ZONE"
+echo "Jupyter Notebook server should now be accessible at http://localhost:${PORT}."
+echo "Connecting interactively to the VM..."
+gcloud compute ssh "$VM_NAME"
 
 echo "Killing port forwarding process..."
 kill "$PORT_FWD_PID" || true
@@ -46,7 +47,7 @@ read -r -p "Stop the VM ($VM_NAME)? (y/n): " STOP_VM
 
 if [[ "$STOP_VM" =~ ^[Yy]$ ]]; then
   echo "Stopping VM..."
-  gcloud compute instances stop "$VM_NAME" --zone="$ZONE"
+  gcloud compute instances stop "$VM_NAME"
 else
   echo "VM will remain running."
 fi
