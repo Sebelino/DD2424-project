@@ -42,13 +42,19 @@ gcloud compute zones list --filter="region:(us-*)"
 Create a VM instance in the zone you selected above:
 
 ```bash
-./deploy-vm.sh
+./deploy-vm.sh L4
 ```
 
-Alternatively, if you want it preemptible (cheaper but less reliable):
+Alternative: Use the cheaper but less available T4 GPU:
 
 ```bash
-./deploy-vm.sh --preemptible
+./deploy-vm.sh T4
+```
+
+Alternative: Make the VM preemptible (cheaper but less reliable in terms of uptime):
+
+```bash
+./deploy-vm.sh T4 --preemptible
 ```
 
 Open ports:
