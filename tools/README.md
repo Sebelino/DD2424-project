@@ -45,6 +45,12 @@ Create a VM instance in the zone you selected above:
 ./deploy-vm.sh
 ```
 
+Alternatively, if you want it preemptible (cheaper but less reliable):
+
+```bash
+./deploy-vm.sh --preemptible
+```
+
 Open ports:
 
 ```bash
