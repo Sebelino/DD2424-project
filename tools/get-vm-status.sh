@@ -1,3 +1,7 @@
 #!/usr/bin/env bash
 
-gcloud compute instances describe deeplearning-vm --zone=us-central1-a --format='get(status)'
+set -Eeuo pipefail
+
+VM_NAME="deeplearning-vm"
+
+gcloud compute instances describe "$VM_NAME" --format='get(status)'
