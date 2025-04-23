@@ -93,6 +93,25 @@ The following script:
 ./run-vm.sh
 ```
 
+## Set hostname
+
+This script tells your operating system to recognize the hostname
+`deeplearning-vm` as the IP address of the VM. This way, you can use the
+hostname instead of the IP address directly in scripts/configuration. This is
+useful in case the IP address of your VM changes, which tends to happen every
+time you restart it.
+
+```bash
+./set-hostname.sh
+
+ping deeplearning-vm
+
+PING deeplearning-vm (34.72.232.36) 56(84) bytes of data.
+64 bytes from deeplearning-vm (34.72.232.36): icmp_seq=1 ttl=52 time=330 ms
+64 bytes from deeplearning-vm (34.72.232.36): icmp_seq=2 ttl=52 time=130 ms
+64 bytes from deeplearning-vm (34.72.232.36): icmp_seq=3 ttl=52 time=172 ms
+```
+
 ## Delete VM
 
 ```bash
