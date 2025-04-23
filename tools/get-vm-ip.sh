@@ -2,4 +2,6 @@
 
 set -Eeuo pipefail
 
-gcloud compute instances describe deeplearning-vm --zone=us-central1-a --format='get(networkInterfaces[0].accessConfigs[0].natIP)'
+VM_NAME="deeplearning-vm"
+
+gcloud compute instances describe "$VM_NAME" --format='get(networkInterfaces[0].accessConfigs[0].natIP)'
