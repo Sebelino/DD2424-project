@@ -99,6 +99,22 @@ The following script:
 ./run-vm.sh
 ```
 
+Once you have a remote shell, you can clone the repo:
+
+```bash
+sebelino@deeplearning-vm:~$ git clone https://github.com/Sebelino/DD2424-project.git
+```
+
+and open http://localhost:8888 in your browser. You should see the Jupyter Notebook server running.
+
+Upon exiting, you will be asked if you want to shut down the VM:
+
+```bash
+sebelino@deeplearning-vm:~$ exit
+Stop the VM (deeplearning-vm)? (y/n): n
+VM will remain running.
+```
+
 ## Set hostname
 
 This script tells your operating system to recognize the hostname
