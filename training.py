@@ -1,6 +1,6 @@
 import time
-from dataclasses import dataclass
-from typing import Literal, Tuple, Optional
+from dataclasses import dataclass, asdict
+from typing import Literal, Tuple, Optional, Any
 
 import torch
 import torch.nn as nn
@@ -34,10 +34,26 @@ def backward_pass(classifier, inputs, labels, criterion):
 
 
 @dataclass
+class AdamParams:
+    learning_rate: float
+    name: str = "adam"
+
+
+@dataclass
+class NagParams:
+    learning_rate: float
+    weight_decay: float
+    momentum: float
+    name: str = "nag"
+
+
+@dataclass
 class TrainParams:
     seed: int
+    batch_size: int
     architecture: Literal["resnet18", "resnet34", "resnet50"]
-    optimizer: Literal["adam", "nag"]
+    optimizer: NagParams | AdamParams
+    n_epochs: int
     freeze_layers: bool
     # Epochs (unordered) at which we unfreeze the second-to-last layer, then third-to-last layer
     unfreezing_epochs: Tuple[int, ...]
@@ -47,6 +63,21 @@ class TrainParams:
     time_limit_seconds: Optional[int]
     # Stop training if this validation accuracy is exceeded during training
     val_acc_target: Optional[float]
+
+    def minimal_dict(self) -> dict[str, Any]:
+        def prune(obj: Any) -> Any:
+            if isinstance(obj, dict):
+                return {
+                    key: prune(val)
+                    for key, val in obj.items()
+                    if val is not None
+                }
+            if isinstance(obj, (list, tuple)):
+                pruned = [prune(val) for val in obj if val is not None]
+                return type(obj)(pruned)
+            return obj
+
+        return prune(asdict(self))
 
 
 class Classifier:
@@ -86,18 +117,18 @@ class Classifier:
 
     @classmethod
     def _make_optimizer(cls, params, model):
-        if params.optimizer == "adam":
+        if params.optimizer.name == "adam":
             return optim.Adam(
                 filter(lambda p: p.requires_grad, model.parameters()),
-                lr=0.001
+                lr=params.optimizer.learning_rate,
             )
-        elif params.optimizer == "nag":
+        elif params.optimizer.name == "nag":
             return optim.SGD(
                 filter(lambda p: p.requires_grad, model.parameters()),
-                lr=0.01,
-                momentum=0.9,
+                lr=params.optimizer.learning_rate,
+                momentum=params.optimizer.momentum,
                 nesterov=True,
-                weight_decay=1e-4,
+                weight_decay=params.optimizer.weight_decay,
             )
         else:
             raise NotImplementedError
