@@ -1,8 +1,6 @@
 import os
 import shutil
 
-import torch
-from matplotlib import pyplot as plt
 from tqdm import tqdm
 
 from plotting import make_train_val_plot
@@ -14,6 +12,8 @@ def evaluate_with_train_val_plot(result: TrainingResult):
 
 
 def evaluate_test_accuracy_and_misclassified(result: TrainingResult, test_loader, test_dataset):
+    from matplotlib import pyplot as plt
+    import torch
     def collect_misclassified(model, loader, device, dataset):
         model.eval()
         correct = 0

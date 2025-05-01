@@ -1,9 +1,9 @@
-import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.ticker import MaxNLocator
 
 
 def make_train_val_plot(epochs, train_accuracies, val_accuracies):
+    import matplotlib.pyplot as plt
+    from matplotlib.ticker import MaxNLocator
     fix, ax = plt.subplots(figsize=(5, 5))
 
     ax.plot(epochs, train_accuracies, label='Train Accuracy')
@@ -20,7 +20,9 @@ def make_train_val_plot(epochs, train_accuracies, val_accuracies):
     plt.tight_layout()
     plt.show()
 
+
 def make_run_comparison_plot(epochs, accuracies_dict):
+    import matplotlib.pyplot as plt
     fix, ax = plt.subplots(figsize=(5, 5))
 
     for label, accuracies in accuracies_dict.items():
@@ -37,7 +39,9 @@ def make_run_comparison_plot(epochs, accuracies_dict):
     plt.tight_layout()
     plt.show()
 
+
 def make_run_comparison_ci_plot(epochs, accuracies_samples_dict, ci=95):
+    import matplotlib.pyplot as plt
     fig, ax = plt.subplots(figsize=(5, 5))
     alpha_pct = (100 - ci) / 2
     lower_pct = alpha_pct

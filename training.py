@@ -1,5 +1,3 @@
-import copy
-import json
 import time
 from dataclasses import dataclass, asdict
 from typing import Literal, Tuple, Optional, Any
@@ -90,10 +88,6 @@ class TrainingResult:
     update_steps: Tuple[int, ...]
     epochs: Tuple[int, ...]
     training_elapsed: float
-
-    def json_dumps(self):
-        dct = asdict(copy.deepcopy(self))
-        return json.dumps(dct, indent=4, sort_keys=True)
 
 
 class Trainer:

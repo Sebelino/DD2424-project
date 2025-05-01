@@ -58,8 +58,9 @@ def run(training_params: TrainParams) -> TrainingResult:
         f"Train/Val size: {len(train_loader.dataset)}:{len(val_loader.dataset)}, Iterations per epoch: {len(train_loader)}")
     print(f"GPU acceleration enabled: {'Yes 🚀' if trainer.gpu_acceleration_enabled() else 'No 🐌'}")
 
-    print("Training with params:")
-    print(json.dumps(trainer.params.minimal_dict(), indent=4, sort_keys=True))
-
     result = trainer.train(train_loader, val_loader)
     return result
+
+
+def json_dumps(dct: dict):
+    return json.dumps(dct, indent=4, sort_keys=True)
