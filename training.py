@@ -10,6 +10,8 @@ from torchvision import models
 from torchvision.models import ResNet18_Weights, ResNet34_Weights, ResNet50_Weights
 from tqdm.notebook import tqdm
 
+from util import dumps_inline_lists
+
 
 def evaluate(model, loader, device):
     model.eval()
@@ -80,6 +82,9 @@ class TrainParams:
 
         return prune(asdict(self))
 
+    def pprint(self):
+        return dumps_inline_lists(self.minimal_dict())
+
     def copy(self) -> 'TrainParams':
         return copy.deepcopy(self)
 
@@ -92,6 +97,9 @@ class TrainingResult:
     update_steps: Tuple[int, ...]
     epochs: Tuple[int, ...]
     training_elapsed: float
+
+    def pprint(self):
+        return dumps_inline_lists(asdict(self))
 
 
 class Trainer:
