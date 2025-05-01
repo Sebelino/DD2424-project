@@ -40,6 +40,7 @@ def backward_pass(trainer, inputs, labels, criterion):
 class AdamParams:
     learning_rate: float
     name: str = "adam"
+    weight_decay: float
 
 
 @dataclass
@@ -66,6 +67,10 @@ class TrainParams:
     time_limit_seconds: Optional[int]
     # Stop training if this validation accuracy is exceeded during training
     val_acc_target: Optional[float]
+    # Finetune l layers simultaneously
+    unfreeze_last_l_blocks: Optional[int] = None
+    # data augmentation
+    data_augmentation: Optional[Literal["true", "false"]] = None
 
     def minimal_dict(self) -> dict[str, Any]:
         def prune(obj: Any) -> Any:
@@ -139,6 +144,7 @@ class Trainer:
             return optim.Adam(
                 filter(lambda p: p.requires_grad, model.parameters()),
                 lr=params.optimizer.learning_rate,
+                weight_decay=params.optimizer.weight_decay,
             )
         elif params.optimizer.name == "nag":
             return optim.SGD(
@@ -160,8 +166,21 @@ class Trainer:
 
     @classmethod
     def make_transform(cls, params: TrainParams):
+        if params.data_augmentation is not None and params.data_augmentation == "true":
+            print("performing data augmentation")
+            train_transforms = transforms.Compose([
+                transforms.RandomHorizontalFlip(),         # Random flip with probability 0.5
+                transforms.RandomRotation(15),             # Random rotation within +/-15 degrees
+                transforms.ToTensor()                      # Convert to tensor
+            #     transforms.Normalize(
+            #         mean=[0.485, 0.456, 0.406],             # Imagenet mean
+            #         std=[0.229, 0.224, 0.225]               # Imagenet std
+            #     )
+            ])
+            return train_transforms
         weights, _ = cls.arch_dict[params.architecture]
         return weights.transforms()
+
 
     def gpu_acceleration_enabled(self):
         return self.device.type == 'cuda'
@@ -218,6 +237,26 @@ class Trainer:
             return True
         return False
 
+    def maybe_unfreeze_last_layers(self, l, model: nn.Module):
+        if l is None:
+            return
+        # Define the model blocks (last to first)
+        layer_blocks = [
+            model.layer4,
+            model.layer3,
+            model.layer2,
+            model.layer1,
+            model.conv1,
+            model.bn1,
+        ]
+    
+        # Unfreeze the last l blocks
+        for i in range(min(l, len(layer_blocks))):
+            for param in layer_blocks[i].parameters():
+                param.requires_grad = True
+    
+        print(f"[Trainer] Unfroze last {l} blocks")
+
     def train(self, train_loader, val_loader) -> TrainingResult:
         training_start = time.perf_counter()
         criterion = nn.CrossEntropyLoss()
@@ -231,6 +270,8 @@ class Trainer:
         training_accuracies = []
         training_losses = []
         update_steps = []
+
+        self.maybe_unfreeze_last_layers(self.params.unfreeze_last_l_blocks, model)
 
         update_step = 1  # Epoch and update step start from 1
         progress_bar = tqdm(range(1, max_num_epochs + 1), desc="Epoch")
