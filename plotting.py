@@ -23,6 +23,7 @@ def make_train_val_plot(epochs, train_accuracies, val_accuracies):
 
 def make_run_comparison_plot(epochs, accuracies_dict):
     import matplotlib.pyplot as plt
+    from matplotlib.ticker import MaxNLocator
     fix, ax = plt.subplots(figsize=(5, 5))
 
     for label, accuracies in accuracies_dict.items():
@@ -41,6 +42,7 @@ def make_run_comparison_plot(epochs, accuracies_dict):
 
 
 def make_run_comparison_ci_plot(epochs, accuracies_samples_dict, ci=95):
+    from matplotlib.ticker import MaxNLocator
     import matplotlib.pyplot as plt
     fig, ax = plt.subplots(figsize=(5, 5))
     alpha_pct = (100 - ci) / 2
