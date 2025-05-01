@@ -1,3 +1,5 @@
+import copy
+import json
 import time
 from dataclasses import dataclass, asdict
 from typing import Literal, Tuple, Optional, Any
@@ -25,11 +27,11 @@ def evaluate(model, loader, device):
     return correct / total
 
 
-def backward_pass(classifier, inputs, labels, criterion):
-    outputs = classifier.model(inputs)
+def backward_pass(trainer, inputs, labels, criterion):
+    outputs = trainer.model(inputs)
     loss = criterion(outputs, labels)
     loss.backward()
-    classifier.optimizer.step()
+    trainer.optimizer.step()
     return outputs, loss
 
 
@@ -80,7 +82,21 @@ class TrainParams:
         return prune(asdict(self))
 
 
-class Classifier:
+@dataclass
+class TrainingResult:
+    training_losses: Tuple[float, ...]
+    training_accuracies: Tuple[float, ...]
+    validation_accuracies: Tuple[float, ...]
+    update_steps: Tuple[int, ...]
+    epochs: Tuple[int, ...]
+    training_elapsed: float
+
+    def json_dumps(self):
+        dct = asdict(copy.deepcopy(self))
+        return json.dumps(dct, indent=4, sort_keys=True)
+
+
+class Trainer:
     num_classes = 37
     arch_dict = dict(
         resnet18=(ResNet18_Weights.DEFAULT, models.resnet18),
@@ -90,19 +106,15 @@ class Classifier:
 
     def __init__(self, params: TrainParams):
         self.device = self._make_device()
-        self.transform = self._make_transform(params)
+        self.transform = self.make_transform(params)
         self.model = self._make_model(params, self.device)
         self.optimizer = self._make_optimizer(params, self.model)
         self.epoch_to_unfreezing = self._make_unfreezings(params, self.model)
         self.params = params
-        self.training_start = None
-        self.validation_accuracies = []
-        self.training_accuracies = []
-        self.epoch_losses = []
 
     @classmethod
     def _make_model(cls, params: TrainParams, device):
-        weights, model_fn = Classifier.arch_dict[params.architecture]
+        weights, model_fn = Trainer.arch_dict[params.architecture]
         model = model_fn(weights=weights)
 
         if params.freeze_layers:
@@ -112,7 +124,7 @@ class Classifier:
             param.requires_grad = True  # Unfreeze final layer
 
         num_features = model.fc.in_features
-        model.fc = nn.Linear(num_features, Classifier.num_classes)
+        model.fc = nn.Linear(num_features, Trainer.num_classes)
         return model.to(device)
 
     @classmethod
@@ -141,15 +153,12 @@ class Classifier:
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     @classmethod
-    def _make_transform(cls, params: TrainParams):
-        weights, _ = Classifier.arch_dict[params.architecture]
+    def make_transform(cls, params: TrainParams):
+        weights, _ = cls.arch_dict[params.architecture]
         return weights.transforms()
 
     def gpu_acceleration_enabled(self):
         return self.device.type == 'cuda'
-
-    def start_training(self):
-        self.training_start = time.perf_counter()
 
     @classmethod
     def _make_unfreezings(cls, params: TrainParams, model):
@@ -188,13 +197,13 @@ class Classifier:
         else:
             raise NotImplementedError()
 
-    def should_stop_training_early(self) -> bool:
-        current_val_acc = self.validation_accuracies[-1]
+    def should_stop_training_early(self, validation_accuracies, training_start) -> bool:
+        current_val_acc = validation_accuracies[-1]
         val_acc_target = self.params.val_acc_target
         if val_acc_target is not None and current_val_acc >= val_acc_target:
             print(f"Exceeded target validation accuracy -- stopping training.")
             return True
-        running_time_seconds = time.perf_counter() - self.training_start
+        running_time_seconds = time.perf_counter() - training_start
         time_limit_seconds = self.params.time_limit_seconds
         if time_limit_seconds is not None and running_time_seconds >= time_limit_seconds:
             time_limit_seconds = self.params.time_limit_seconds
@@ -202,3 +211,67 @@ class Classifier:
                 f"Exhausted {running_time_seconds:.0f}/{time_limit_seconds} seconds of the computational budget -> stopping training.")
             return True
         return False
+
+    def train(self, train_loader, val_loader) -> TrainingResult:
+        training_start = time.perf_counter()
+        criterion = nn.CrossEntropyLoss()
+        model = self.model
+
+        max_num_epochs = self.params.n_epochs
+        num_epochs = max_num_epochs
+        model.train()
+
+        validation_accuracies = []
+        training_accuracies = []
+        training_losses = []
+        update_steps = []
+
+        update_step = 1  # Epoch and update step start from 1
+        progress_bar = tqdm(range(1, max_num_epochs + 1), desc="Epoch")
+        for epoch in progress_bar:
+            running_loss = 0.0
+            correct = 0
+            total = 0
+
+            self.maybe_unfreeze(epoch)
+
+            for inputs, labels in tqdm(train_loader, desc="Batch"):
+                inputs, labels = inputs.to(self.device), labels.to(self.device)
+                self.optimizer.zero_grad()
+                outputs, loss = backward_pass(self, inputs, labels, criterion)
+                running_loss += loss.item()
+                _, predicted = torch.max(outputs.data, 1)
+                total += labels.size(0)
+                correct += (predicted == labels).sum().item()
+                update_step += 1
+            train_acc = correct / total
+
+            should_record_metrics = self.should_record_metrics()
+            if should_record_metrics:
+                val_acc = evaluate(model, val_loader, self.device)
+                val_acc_str = f", Val Acc: {100 * val_acc:.2f}%"
+            else:
+                val_acc = None
+                val_acc_str = ""
+            training_losses.append(running_loss / len(train_loader))
+            training_accuracies.append(train_acc)
+            if should_record_metrics:
+                update_steps.append(update_step)
+                validation_accuracies.append(val_acc)
+
+            tqdm.write(
+                f"Epoch [{epoch}/{max_num_epochs}], Loss: {running_loss / len(train_loader):.4f}, Train Acc: {100 * train_acc:.2f}%{val_acc_str}")
+
+            if self.should_stop_training_early(validation_accuracies, training_start):
+                num_epochs = epoch
+                break
+        epochs = range(1, num_epochs + 1)
+        training_elapsed = time.perf_counter() - training_start
+        return TrainingResult(
+            training_losses=tuple(training_losses),
+            training_accuracies=tuple(training_accuracies),
+            validation_accuracies=tuple(validation_accuracies),
+            epochs=tuple(epochs),
+            update_steps=tuple(update_steps),
+            training_elapsed=training_elapsed,
+        )

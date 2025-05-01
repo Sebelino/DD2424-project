@@ -1,9 +1,11 @@
+import numpy as np
+
+
 class Determinism:
     def __init__(self, seed=0):
         self.seed = seed
-        self.sow_seed()
 
-    def sow_seed(self):
+    def sow(self):
         import os
         # Must come before any torch imports
         os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
@@ -20,10 +22,12 @@ class Determinism:
         torch.backends.cudnn.benchmark = False  # Slower, but reproducible
         torch.use_deterministic_algorithms(True)
         os.environ['PYTHONHASHSEED'] = str(seed)
+        return self
 
-    def torch_generator(self, torch_generator):
-        torch_generator.manual_seed(self.seed)
+    @staticmethod
+    def torch_generator(seed, torch_generator):
+        torch_generator.manual_seed(seed)
 
-    def data_loader_worker_init_fn(self):
-        import numpy as np
-        return lambda worker_id: np.random.seed(self.seed + worker_id)
+    @staticmethod
+    def data_loader_worker_init_fn(seed):
+        return lambda worker_id: np.random.seed(seed + worker_id)
