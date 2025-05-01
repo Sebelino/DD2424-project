@@ -60,7 +60,3 @@ def run(training_params: TrainParams) -> TrainingResult:
 
     result = trainer.train(train_loader, val_loader)
     return result
-
-
-def json_dumps(dct: dict):
-    return json.dumps(dct, indent=4, sort_keys=True)

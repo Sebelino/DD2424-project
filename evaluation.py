@@ -1,14 +1,40 @@
 import os
 import shutil
+from typing import Dict
 
 from tqdm import tqdm
 
-from plotting import make_train_val_plot
-from training import TrainingResult
+from plotting import make_run_comparison_plot
+from run import run
+from training import TrainingResult, TrainParams
 
 
 def evaluate_with_train_val_plot(result: TrainingResult):
-    make_train_val_plot(result.epochs, result.training_accuracies, result.validation_accuracies)
+    accuracies_dict = {
+        "Training": result.training_accuracies,
+        "Validation": result.validation_accuracies,
+    }
+    make_run_comparison_plot(result.epochs, accuracies_dict)
+
+
+def evaluate_runs(results: Dict[str, TrainingResult]):
+    accuracies_dict = {label: result.validation_accuracies for label, result in results.items()}
+    epochs = list(results.values())[0].epochs
+    for result in results.values():
+        if result.epochs != epochs:
+            raise ValueError(
+                f"The runs are not comparable because the number of points differ: {len(epochs)} vs. {result.epochs}")
+    make_run_comparison_plot(epochs, accuracies_dict)
+
+
+def run_with_different_seeds(training_params: TrainParams, count: int):
+    label_to_result = dict()
+    for i in range(count):
+        training_params.seed += i
+        result = run(training_params)
+        label = f"seed={training_params.seed}"
+        label_to_result[label] = result
+    evaluate_runs(label_to_result)
 
 
 def evaluate_test_accuracy_and_misclassified(result: TrainingResult, test_loader, test_dataset):

@@ -1,26 +1,6 @@
 import numpy as np
 
 
-def make_train_val_plot(epochs, train_accuracies, val_accuracies):
-    import matplotlib.pyplot as plt
-    from matplotlib.ticker import MaxNLocator
-    fix, ax = plt.subplots(figsize=(5, 5))
-
-    ax.plot(epochs, train_accuracies, label='Train Accuracy')
-    ax.plot(epochs, val_accuracies, label='Validation Accuracy')
-
-    ax.set_xlabel('Epoch')
-    ax.set_ylabel('Accuracy (%)')
-    ax.set_title('Train vs Validation Accuracy')
-    ax.legend()
-    ax.grid(True)
-
-    ax.set_box_aspect(1)
-    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-    plt.tight_layout()
-    plt.show()
-
-
 def make_run_comparison_plot(epochs, accuracies_dict):
     import matplotlib.pyplot as plt
     from matplotlib.ticker import MaxNLocator
