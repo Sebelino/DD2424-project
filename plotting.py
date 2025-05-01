@@ -21,23 +21,23 @@ def make_run_comparison_plot(epochs, accuracies_dict):
     plt.show()
 
 
-def make_run_comparison_ci_plot(epochs, accuracies_samples_dict, ci=95):
+def make_run_comparison_ci_plot(epochs, accuracies_dict, ci=0.95):
     from matplotlib.ticker import MaxNLocator
     import matplotlib.pyplot as plt
     fig, ax = plt.subplots(figsize=(5, 5))
-    alpha_pct = (100 - ci) / 2
+    alpha_pct = (100 - 100*ci) / 2
     lower_pct = alpha_pct
     upper_pct = 100 - alpha_pct
 
-    for label, samples in accuracies_samples_dict.items():
-        arr = np.array(samples)
+    for label, samples in accuracies_dict.items():
+        arr = np.array(list(samples.values()))
         mean_vals = arr.mean(axis=0)
         lower_vals = np.percentile(arr, lower_pct, axis=0)
         upper_vals = np.percentile(arr, upper_pct, axis=0)
 
         ax.plot(epochs, mean_vals, label=f'{label} Mean')
         ax.fill_between(epochs, lower_vals, upper_vals, alpha=0.3,
-                        label=f'{label} {ci}% CI')
+                        label=f'{label} {int(100*ci)}% CI')
 
     ax.set_xlabel('Epoch')
     ax.set_ylabel('Accuracy (%)')

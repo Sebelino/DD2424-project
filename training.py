@@ -1,3 +1,4 @@
+import copy
 import time
 from dataclasses import dataclass, asdict
 from typing import Literal, Tuple, Optional, Any
@@ -78,6 +79,9 @@ class TrainParams:
             return obj
 
         return prune(asdict(self))
+
+    def copy(self) -> 'TrainParams':
+        return copy.deepcopy(self)
 
 
 @dataclass

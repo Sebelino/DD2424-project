@@ -1,10 +1,11 @@
+import copy
 import os
 import shutil
-from typing import Dict
+from typing import Dict, List
 
 from tqdm import tqdm
 
-from plotting import make_run_comparison_plot
+from plotting import make_run_comparison_plot, make_run_comparison_ci_plot
 from run import run
 from training import TrainingResult, TrainParams
 
@@ -26,16 +27,40 @@ def evaluate_runs(results: Dict[str, TrainingResult]):
                 f"The runs are not comparable because the number of points differ: {len(epochs)} vs. {result.epochs}")
     make_run_comparison_plot(epochs, accuracies_dict)
 
+def evaluate_runs_ci(results_per_paramset: Dict[str, Dict[str, TrainingResult]]):
+    validation_accuracies = dict()
+    for paramset_label, paramset_results_dict in results_per_paramset.items():
+        accuracies_dict = {label: result.validation_accuracies for label, result in paramset_results_dict.items()}
+        validation_accuracies[paramset_label] = accuracies_dict
+    epochs = list(list(results_per_paramset.values())[0].values())[0].epochs
+    for paramset_results_dict in results_per_paramset.values():
+        for result in paramset_results_dict.values():
+            if result.epochs != epochs:
+                raise ValueError(
+                    f"The runs are not comparable because the number of points differ: {len(epochs)} vs. {result.epochs}")
+    make_run_comparison_ci_plot(epochs, validation_accuracies)
 
-def run_with_different_seeds(training_params: TrainParams, count: int):
+def run_with_different_seeds(training_params: TrainParams, trials: int):
+    training_params = training_params.copy()
     label_to_result = dict()
-    for i in range(count):
-        training_params.seed += i
+    for i in range(trials):
+        training_params.seed += 1
         result = run(training_params)
-        label = f"seed={training_params.seed}"
+        label = f"Val acc seed={training_params.seed}"
         label_to_result[label] = result
     evaluate_runs(label_to_result)
 
+def run_comparison(param_sets: Dict[str, TrainParams], trials: int):
+    dct = dict()
+    for paramset_label, param_set in param_sets.items():
+        param_set = param_set.copy()
+        dct[paramset_label] = dict()
+        for i in range(trials):
+            param_set.seed += i
+            result = run(param_set)
+            run_label = f"Val acc seed={param_set.seed}"
+            dct[paramset_label][run_label] = result
+    evaluate_runs_ci(dct)
 
 def evaluate_test_accuracy_and_misclassified(result: TrainingResult, test_loader, test_dataset):
     from matplotlib import pyplot as plt
