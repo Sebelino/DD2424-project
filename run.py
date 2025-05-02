@@ -1,5 +1,3 @@
-import json
-
 import torch
 from joblib import Memory
 from torch.utils.data import DataLoader, random_split
@@ -15,8 +13,7 @@ else:
     memory = Memory(location=None, verbose=0)
 
 
-@memory.cache
-def run(training_params: TrainParams) -> TrainingResult:
+def make_trainer(training_params: TrainParams):
     trainer = Trainer(training_params)
 
     train_dataset = load_dataset("trainval", trainer.transform)
@@ -57,6 +54,11 @@ def run(training_params: TrainParams) -> TrainingResult:
     print(
         f"Train/Val size: {len(train_loader.dataset)}:{len(val_loader.dataset)}, Iterations per epoch: {len(train_loader)}")
     print(f"GPU acceleration enabled: {'Yes 🚀' if trainer.gpu_acceleration_enabled() else 'No 🐌'}")
+    return trainer, train_loader, val_loader
 
+
+@memory.cache
+def run(training_params: TrainParams) -> TrainingResult:
+    trainer, train_loader, val_loader = make_trainer(training_params)
     result = trainer.train(train_loader, val_loader)
     return result

@@ -7,7 +7,7 @@ from tqdm import tqdm
 
 from plotting import make_run_comparison_plot, make_run_comparison_ci_plot
 from run import run
-from training import TrainingResult, TrainParams
+from training import TrainingResult, TrainParams, Trainer
 
 
 def evaluate_with_train_val_plot(result: TrainingResult):
@@ -62,7 +62,7 @@ def run_comparison(param_sets: Dict[str, TrainParams], trials: int):
             dct[paramset_label][run_label] = result
     evaluate_runs_ci(dct)
 
-def evaluate_test_accuracy_and_misclassified(result: TrainingResult, test_loader, test_dataset):
+def evaluate_test_accuracy_and_misclassified(trainer: Trainer, test_loader, test_dataset):
     from matplotlib import pyplot as plt
     import torch
     def collect_misclassified(model, loader, device, dataset):
@@ -89,8 +89,6 @@ def evaluate_test_accuracy_and_misclassified(result: TrainingResult, test_loader
 
         model.train()
         return 100 * correct / total, misclassified
-
-    trainer = result.trainer
 
     # Directory for saving misclassified images
     misclassified_dir = "./misclassified"
