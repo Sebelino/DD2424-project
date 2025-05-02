@@ -8,6 +8,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torchvision import models
 from torchvision.models import ResNet18_Weights, ResNet34_Weights, ResNet50_Weights
+from torchvision.transforms import transforms
 from tqdm.notebook import tqdm
 
 from util import dumps_inline_lists
