@@ -39,8 +39,8 @@ def backward_pass(trainer, inputs, labels, criterion):
 @dataclass
 class AdamParams:
     learning_rate: float
-    name: str = "adam"
     weight_decay: float
+    name: str = "adam"
 
 
 @dataclass
