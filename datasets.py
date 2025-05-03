@@ -20,30 +20,33 @@ def load_dataset(split_name: str, transform):
 
 @dataclass
 class DatasetParams:
-    torch_seed: int
+    # Seed for splitting into train & val sets
+    splitting_seed: int
+    # Seed for shuffling the data in each epoch
+    shuffler_seed: int
     batch_size: int
+    # validation_set_fraction=0.2 means that the validation set is 20 % of the trainval dataset
+    validation_set_fraction: float
     # Size of training + validation set. None means "all".
-    training_size: Optional[int] = None
+    trainval_size: Optional[int] = None
 
 
 def make_datasets(dataset_params: DatasetParams, transform):
-    train_dataset = load_dataset("trainval", transform)
+    trainval_dataset = load_dataset("trainval", transform)
 
-    if dataset_params.training_size is not None:
-        subset_size = dataset_params.training_size
-        small_train_dataset = torch.utils.data.Subset(train_dataset, range(subset_size))
-        train_dataset = small_train_dataset
+    if dataset_params.trainval_size is not None:
+        subset_size = dataset_params.trainval_size
+        trainval_dataset = torch.utils.data.Subset(trainval_dataset, range(subset_size))
 
     num_workers = 3
 
     # 80% train, 20% val split
-    num_train = int(0.8 * len(train_dataset))
-    num_val = len(train_dataset) - num_train
-    torch_generator = torch.Generator()
-    Determinism.torch_generator(dataset_params.torch_seed, torch_generator)
-    train_subset, val_subset = random_split(train_dataset, [num_train, num_val], generator=torch_generator)
+    train_set_fraction = 1 - dataset_params.validation_set_fraction
+    num_train = int(train_set_fraction * len(trainval_dataset))
+    num_val = len(trainval_dataset) - num_train
+    splitter_generator = torch.Generator().manual_seed(dataset_params.splitting_seed)
+    train_subset, val_subset = random_split(trainval_dataset, [num_train, num_val], generator=splitter_generator)
 
-    # DataLoaders
     train_loader = DataLoader(
         train_subset,
         batch_size=dataset_params.batch_size,
@@ -51,7 +54,8 @@ def make_datasets(dataset_params: DatasetParams, transform):
         num_workers=num_workers,
         persistent_workers=True,
         pin_memory=True,
-        worker_init_fn=Determinism.data_loader_worker_init_fn(dataset_params.torch_seed),
+        generator=torch.Generator().manual_seed(dataset_params.shuffler_seed),
+        worker_init_fn=Determinism.data_loader_worker_init_fn(dataset_params.shuffler_seed),
     )
 
     val_loader = DataLoader(
@@ -60,7 +64,8 @@ def make_datasets(dataset_params: DatasetParams, transform):
         shuffle=False,
         num_workers=num_workers,
         persistent_workers=True,
-        worker_init_fn=Determinism.data_loader_worker_init_fn(dataset_params.torch_seed),
+        pin_memory=True,
+        worker_init_fn=Determinism.data_loader_worker_init_fn(dataset_params.shuffler_seed),
     )
 
     return train_loader, val_loader

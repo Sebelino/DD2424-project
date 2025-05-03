@@ -25,9 +25,5 @@ class Determinism:
         return self
 
     @staticmethod
-    def torch_generator(seed, torch_generator):
-        torch_generator.manual_seed(seed)
-
-    @staticmethod
     def data_loader_worker_init_fn(seed):
         return lambda worker_id: np.random.seed(seed + worker_id)
