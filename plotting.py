@@ -25,7 +25,7 @@ def make_run_comparison_ci_plot(epochs, accuracies_dict, ci=0.95):
     from matplotlib.ticker import MaxNLocator
     import matplotlib.pyplot as plt
     fig, ax = plt.subplots(figsize=(5, 5))
-    alpha_pct = (100 - 100*ci) / 2
+    alpha_pct = (100 - 100 * ci) / 2
     lower_pct = alpha_pct
     upper_pct = 100 - alpha_pct
 
@@ -37,7 +37,7 @@ def make_run_comparison_ci_plot(epochs, accuracies_dict, ci=0.95):
 
         ax.plot(epochs, mean_vals, label=f'{label} Mean')
         ax.fill_between(epochs, lower_vals, upper_vals, alpha=0.3,
-                        label=f'{label} {int(100*ci)}% CI')
+                        label=f'{label} {int(100 * ci)}% CI')
 
     ax.set_xlabel('Epoch')
     ax.set_ylabel('Accuracy (%)')

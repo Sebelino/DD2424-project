@@ -56,7 +56,6 @@ class NagParams:
 @dataclass
 class TrainParams:
     seed: int
-    batch_size: int
     architecture: Literal["resnet18", "resnet34", "resnet50"]
     optimizer: NagParams | AdamParams
     n_epochs: int
@@ -275,9 +274,9 @@ class Trainer:
         self.maybe_unfreeze_last_layers(self.params.unfreeze_last_l_blocks, model)
 
         update_step = 1  # Epoch and update step start from 1
-        pb_epochs = tqdm(range(1, max_num_epochs + 1), desc="Epoch", leave=True)  # Progress bar
-        pb_batches = tqdm(train_loader, desc="Batch", leave=True)  # Progress bar
-        pb_evaluate = tqdm(val_loader, desc="Evaluating", leave=True)
+        pb_epochs = tqdm(range(1, max_num_epochs + 1), desc="Epoch", leave=True, position=0)  # Progress bar
+        pb_batches = tqdm(train_loader, desc="Batch", leave=True, position=1)  # Progress bar
+        pb_evaluate = tqdm(val_loader, desc="Evaluating", leave=True, position=2)
 
         for epoch in pb_epochs:
             running_loss = 0.0
@@ -330,6 +329,9 @@ class Trainer:
         tqdm.write(
             f"Elapsed for all epochs: {pb_epochs.format_dict['elapsed']:.2f}s, average per epoch: {1 / pb_epochs.format_dict['rate']:.2f}s, average per batch: {1 / pb_batches.format_dict['rate']:.2f}s")
 
+        # Shouldn't be necessary, but with tqdm they are not terminated for some reason, causing hanging at the next call
+        terminate_workers(train_loader, val_loader)
+
         epochs = range(1, num_epochs + 1)
         training_elapsed = time.perf_counter() - training_start
         return TrainingResult(
@@ -340,3 +342,11 @@ class Trainer:
             update_steps=tuple(update_steps),
             training_elapsed=training_elapsed,
         )
+
+
+def terminate_workers(train_loader, val_loader):
+    for loader in (train_loader, val_loader):
+        it = getattr(loader, "_iterator", None)
+        if it is not None:
+            it._shutdown_workers()
+            del loader._iterator

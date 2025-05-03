@@ -1,10 +1,16 @@
+from typing import Any, Tuple
+
 from run import run
 
 
-def invalidate_run_cache_entry(*function_arguments):
-    is_cache_hit = run.check_call_in_cache(*function_arguments)
-    if not is_cache_hit:
+def invalidate_cache_entry(function_handle, function_arguments: Tuple[Any], invalidate=True):
+    if not invalidate:
         return
-    args_id = run._get_args_id(*function_arguments)
+    is_cache_hit = function_handle.check_call_in_cache(*function_arguments)
+    if not is_cache_hit:
+        print("Invalidate cache entry: failed, missing")
+        return
+    args_id = function_handle._get_args_id(*function_arguments)
     call_id = [run.func_id, args_id]
-    run.store_backend.clear_item(call_id)
+    function_handle.store_backend.clear_item(call_id)
+    print("Invalidate cache entry: successful")
