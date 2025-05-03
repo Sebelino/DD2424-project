@@ -3,7 +3,7 @@ import os
 import shutil
 from typing import Dict, List
 
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 from plotting import make_run_comparison_plot, make_run_comparison_ci_plot
 from run import run

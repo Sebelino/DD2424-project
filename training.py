@@ -9,22 +9,23 @@ import torch.optim as optim
 from torchvision import models
 from torchvision.models import ResNet18_Weights, ResNet34_Weights, ResNet50_Weights
 from torchvision.transforms import transforms
-from tqdm.notebook import tqdm
+from tqdm.auto import tqdm
 
 from util import dumps_inline_lists
 
 
-def evaluate(model, loader, device):
+def evaluate(model, device, loader, progress_bar):
     model.eval()
     correct = 0
     total = 0
     with torch.no_grad():
-        for inputs, labels in tqdm(loader, desc="Evaluating"):
+        for inputs, labels in loader:
             inputs, labels = inputs.to(device), labels.to(device)
             outputs = model(inputs)
             _, predicted = torch.max(outputs.data, 1)
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
+            progress_bar.update()
     model.train()
     return correct / total
 
@@ -170,18 +171,17 @@ class Trainer:
         if params.data_augmentation is not None and params.data_augmentation == "true":
             print("performing data augmentation")
             train_transforms = transforms.Compose([
-                transforms.RandomHorizontalFlip(),         # Random flip with probability 0.5
-                transforms.RandomRotation(15),             # Random rotation within +/-15 degrees
-                transforms.ToTensor()                      # Convert to tensor
-            #     transforms.Normalize(
-            #         mean=[0.485, 0.456, 0.406],             # Imagenet mean
-            #         std=[0.229, 0.224, 0.225]               # Imagenet std
-            #     )
+                transforms.RandomHorizontalFlip(),  # Random flip with probability 0.5
+                transforms.RandomRotation(15),  # Random rotation within +/-15 degrees
+                transforms.ToTensor()  # Convert to tensor
+                #     transforms.Normalize(
+                #         mean=[0.485, 0.456, 0.406],             # Imagenet mean
+                #         std=[0.229, 0.224, 0.225]               # Imagenet std
+                #     )
             ])
             return train_transforms
         weights, _ = cls.arch_dict[params.architecture]
         return weights.transforms()
-
 
     def gpu_acceleration_enabled(self):
         return self.device.type == 'cuda'
@@ -211,7 +211,7 @@ class Trainer:
         layer_label, layer = self.epoch_to_unfreezing[epoch]
         for param in layer.parameters():
             param.requires_grad = True
-        print(f"Unfroze {layer_label} at epoch {epoch}")
+        #print(f"Unfroze {layer_label} at epoch {epoch}")
         # Recreate optimizer after unfreezing more layers
         self.optimizer = self._make_optimizer(self.params, self.model)
 
@@ -250,12 +250,12 @@ class Trainer:
             model.conv1,
             model.bn1,
         ]
-    
+
         # Unfreeze the last l blocks
         for i in range(min(l, len(layer_blocks))):
             for param in layer_blocks[i].parameters():
                 param.requires_grad = True
-    
+
         print(f"[Trainer] Unfroze last {l} blocks")
 
     def train(self, train_loader, val_loader) -> TrainingResult:
@@ -275,15 +275,18 @@ class Trainer:
         self.maybe_unfreeze_last_layers(self.params.unfreeze_last_l_blocks, model)
 
         update_step = 1  # Epoch and update step start from 1
-        progress_bar = tqdm(range(1, max_num_epochs + 1), desc="Epoch")
-        for epoch in progress_bar:
+        pb_epochs = tqdm(range(1, max_num_epochs + 1), desc="Epoch", leave=True)  # Progress bar
+        pb_batches = tqdm(train_loader, desc="Batch", leave=True)  # Progress bar
+        pb_evaluate = tqdm(val_loader, desc="Evaluating", leave=True)
+
+        for epoch in pb_epochs:
             running_loss = 0.0
             correct = 0
             total = 0
 
             self.maybe_unfreeze(epoch)
 
-            for inputs, labels in tqdm(train_loader, desc="Batch"):
+            for inputs, labels in train_loader:
                 inputs, labels = inputs.to(self.device), labels.to(self.device)
                 self.optimizer.zero_grad()
                 outputs, loss = backward_pass(self, inputs, labels, criterion)
@@ -292,12 +295,16 @@ class Trainer:
                 total += labels.size(0)
                 correct += (predicted == labels).sum().item()
                 update_step += 1
+                pb_batches.update()
+            pb_batches.refresh()
+
             train_acc = correct / total
 
             should_record_metrics = self.should_record_metrics()
             if should_record_metrics:
-                val_acc = evaluate(model, val_loader, self.device)
+                val_acc = evaluate(model, self.device, val_loader, pb_evaluate)
                 val_acc_str = f", Val Acc: {100 * val_acc:.2f}%"
+                pb_batches.refresh()
             else:
                 val_acc = None
                 val_acc_str = ""
@@ -307,12 +314,22 @@ class Trainer:
                 update_steps.append(update_step)
                 validation_accuracies.append(val_acc)
 
-            tqdm.write(
-                f"Epoch [{epoch}/{max_num_epochs}], Loss: {running_loss / len(train_loader):.4f}, Train Acc: {100 * train_acc:.2f}%{val_acc_str}")
+            # tqdm.write(
+            #    f"Epoch [{epoch}/{max_num_epochs}], Loss: {running_loss / len(train_loader):.4f}, Train Acc: {100 * train_acc:.2f}%{val_acc_str}")
+
+            is_final_epoch = epoch == max_num_epochs
+            if not is_final_epoch:
+                pb_batches.reset(total=len(train_loader))
+                pb_evaluate.reset(total=len(val_loader))
 
             if self.should_stop_training_early(validation_accuracies, training_start):
                 num_epochs = epoch
                 break
+        pb_batches.close()
+        pb_evaluate.close()
+        tqdm.write(
+            f"Elapsed for all epochs: {pb_epochs.format_dict['elapsed']:.2f}s, average per epoch: {1 / pb_epochs.format_dict['rate']:.2f}s, average per batch: {1 / pb_batches.format_dict['rate']:.2f}s")
+
         epochs = range(1, num_epochs + 1)
         training_elapsed = time.perf_counter() - training_start
         return TrainingResult(

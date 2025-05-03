@@ -51,9 +51,6 @@ def make_trainer(training_params: TrainParams):
         worker_init_fn=Determinism.data_loader_worker_init_fn(training_params.seed),
     )
 
-    print(
-        f"Train/Val size: {len(train_loader.dataset)}:{len(val_loader.dataset)}, Iterations per epoch: {len(train_loader)}")
-    print(f"GPU acceleration enabled: {'Yes 🚀' if trainer.gpu_acceleration_enabled() else 'No 🐌'}")
     return trainer, train_loader, val_loader
 
 
