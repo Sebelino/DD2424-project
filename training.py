@@ -211,7 +211,7 @@ class Trainer:
         layer_label, layer = self.epoch_to_unfreezing[epoch]
         for param in layer.parameters():
             param.requires_grad = True
-        #print(f"Unfroze {layer_label} at epoch {epoch}")
+        # print(f"Unfroze {layer_label} at epoch {epoch}")
         # Recreate optimizer after unfreezing more layers
         self.optimizer = self._make_optimizer(self.params, self.model)
 
@@ -314,8 +314,8 @@ class Trainer:
                 update_steps.append(update_step)
                 validation_accuracies.append(val_acc)
 
-            # tqdm.write(
-            #    f"Epoch [{epoch}/{max_num_epochs}], Loss: {running_loss / len(train_loader):.4f}, Train Acc: {100 * train_acc:.2f}%{val_acc_str}")
+            tqdm.write(
+                f"Epoch [{epoch}/{max_num_epochs}], Loss: {running_loss / len(train_loader):.4f}, Train Acc: {100 * train_acc:.2f}%{val_acc_str}")
 
             is_final_epoch = epoch == max_num_epochs
             if not is_final_epoch:
