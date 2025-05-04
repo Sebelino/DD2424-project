@@ -59,7 +59,7 @@ def run_comparison(dataset_params: DatasetParams, param_sets: Dict[str, TrainPar
         param_set = param_set.copy()
         dct[paramset_label] = dict()
         for i in range(trials):
-            param_set.seed += i
+            param_set.seed += 1
             result = run(dataset_params, param_set)
             run_label = f"Val acc seed={param_set.seed}"
             dct[paramset_label][run_label] = result
