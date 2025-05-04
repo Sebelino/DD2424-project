@@ -1,7 +1,7 @@
 from typing import Any, Tuple
 
 
-def invalidate_cache_entry(function_handle, function_arguments: Tuple[Any], invalidate=True):
+def invalidate_cache_entry(function_handle, function_arguments: Tuple[Any, ...], invalidate=True):
     if not invalidate:
         return
     is_cache_hit = function_handle.check_call_in_cache(*function_arguments)
