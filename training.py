@@ -1,5 +1,6 @@
 import copy
 import time
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, asdict
 from typing import Literal, Tuple, Optional, Any
 
@@ -14,7 +15,7 @@ from tqdm.auto import tqdm
 from util import dumps_inline_lists
 
 
-def evaluate(model, device, loader, progress_bar):
+def evaluate(model, device, loader):
     model.eval()
     correct = 0
     total = 0
@@ -25,7 +26,6 @@ def evaluate(model, device, loader, progress_bar):
             _, predicted = torch.max(outputs.data, 1)
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
-            progress_bar.update()
     model.train()
     return correct / total
 
@@ -108,6 +108,42 @@ class TrainingResult:
         return dumps_inline_lists(asdict(self))
 
 
+class StopCondition(ABC):
+    @abstractmethod
+    def remaining_steps(self, trainer: 'Trainer') -> int:
+        """ How many update steps do we expect to run for? Assumed to be called before the loop. """
+        raise NotImplementedError()
+
+    @abstractmethod
+    def should_stop(self, trainer: 'Trainer') -> bool:
+        """ Iff true, the training session ends. """
+        raise NotImplementedError()
+
+
+class FinishedAllEpochs(StopCondition):
+    def remaining_steps(self, trainer: 'Trainer') -> int:
+        max_num_epochs = trainer.params.n_epochs
+        max_total_update_steps = max_num_epochs * len(trainer.train_loader)
+        return max_total_update_steps
+
+    def should_stop(self, trainer: 'Trainer') -> bool:
+        return trainer.epoch >= trainer.params.n_epochs
+
+
+class FinishedEpochs(StopCondition):
+    def __init__(self, epoch_count):
+        self.epoch_count = epoch_count  # Number of epochs to finish before stopping
+        self.epoch_at_start_of_session = None
+
+    def remaining_steps(self, trainer: 'Trainer') -> int:
+        self.epoch_at_start_of_session = trainer.epoch
+        remaining_epochs = self.epoch_count - (trainer.epoch - self.epoch_at_start_of_session)
+        return remaining_epochs * len(trainer.train_loader)
+
+    def should_stop(self, trainer: 'Trainer') -> bool:
+        return trainer.epoch >= self.epoch_at_start_of_session + self.epoch_count
+
+
 class Trainer:
     num_classes = 37
     arch_dict = dict(
@@ -116,13 +152,23 @@ class Trainer:
         resnet50=(ResNet50_Weights.DEFAULT, models.resnet50),
     )
 
-    def __init__(self, params: TrainParams):
+    def __init__(self, params: TrainParams, verbose=True):
+        self.verbose = verbose
         self.device = self._make_device()
         self.transform = self.make_transform(params)
         self.model = self._make_model(params, self.device)
         self.optimizer = self._make_optimizer(params, self.model)
         self.epoch_to_unfreezing = self._make_unfreezings(params, self.model)
         self.params = params
+        self.epoch = 0  # Current epoch. 0 means training has not yet begun. Starts at 1.
+        self.update_step = 0  # Current update step. 0 means training has not yet begun. Starts at 1.
+
+        self.validation_accuracies = []
+        self.training_accuracies = []
+        self.training_losses = []
+        self.recorded_update_steps = []
+        self.train_loader = None
+        self.val_loader = None
 
     @classmethod
     def _make_model(cls, params: TrainParams, device):
@@ -257,8 +303,14 @@ class Trainer:
 
         print(f"[Trainer] Unfroze last {l} blocks")
 
-    def train(self, train_loader, val_loader) -> TrainingResult:
+    def load(self, train_loader, val_loader):
+        self.train_loader = train_loader
+        self.val_loader = val_loader
+
+    def train(self, stop_condition: StopCondition) -> TrainingResult:
         training_start = time.perf_counter()
+        if self.train_loader is None or self.val_loader is None:
+            raise ValueError("Must call Trainer.load(...) before training")
         criterion = nn.CrossEntropyLoss()
         model = self.model
 
@@ -266,26 +318,24 @@ class Trainer:
         num_epochs = max_num_epochs
         model.train()
 
-        validation_accuracies = []
-        training_accuracies = []
-        training_losses = []
-        update_steps = []
-
         self.maybe_unfreeze_last_layers(self.params.unfreeze_last_l_blocks, model)
 
-        update_step = 1  # Epoch and update step start from 1
-        pb_epochs = tqdm(range(1, max_num_epochs + 1), desc="Epoch", leave=True, position=0)  # Progress bar
-        pb_batches = tqdm(train_loader, desc="Batch", leave=True, position=1)  # Progress bar
-        pb_evaluate = tqdm(val_loader, desc="Evaluating", leave=True, position=2)
+        remaining_steps = stop_condition.remaining_steps(self)
+        if self.verbose:
+            pb_update_steps = tqdm(range(1, remaining_steps + 1), desc="Update step", leave=True)  # Progress bar
 
-        for epoch in pb_epochs:
+        while not stop_condition.should_stop(self):
+            self.epoch += 1
             running_loss = 0.0
             correct = 0
             total = 0
 
-            self.maybe_unfreeze(epoch)
+            self.maybe_unfreeze(self.epoch)
 
-            for inputs, labels in train_loader:
+            for inputs, labels in self.train_loader:
+                if self.verbose:
+                    pb_update_steps.update(1)  # Move progress bar by 1
+                self.update_step += 1
                 inputs, labels = inputs.to(self.device), labels.to(self.device)
                 self.optimizer.zero_grad()
                 outputs, loss = backward_pass(self, inputs, labels, criterion)
@@ -293,53 +343,47 @@ class Trainer:
                 _, predicted = torch.max(outputs.data, 1)
                 total += labels.size(0)
                 correct += (predicted == labels).sum().item()
-                update_step += 1
-                pb_batches.update()
-            pb_batches.refresh()
 
             train_acc = correct / total
 
             should_record_metrics = self.should_record_metrics()
             if should_record_metrics:
-                val_acc = evaluate(model, self.device, val_loader, pb_evaluate)
+                val_acc = evaluate(model, self.device, self.val_loader)
                 val_acc_str = f", Val Acc: {100 * val_acc:.2f}%"
-                pb_batches.refresh()
             else:
                 val_acc = None
                 val_acc_str = ""
-            training_losses.append(running_loss / len(train_loader))
-            training_accuracies.append(train_acc)
+            self.training_losses.append(running_loss / len(self.train_loader))
+            self.training_accuracies.append(train_acc)
             if should_record_metrics:
-                update_steps.append(update_step)
-                validation_accuracies.append(val_acc)
+                self.recorded_update_steps.append(self.update_step)
+                self.validation_accuracies.append(val_acc)
 
-            tqdm.write(
-                f"Epoch [{epoch}/{max_num_epochs}], Loss: {running_loss / len(train_loader):.4f}, Train Acc: {100 * train_acc:.2f}%{val_acc_str}")
+            if self.verbose:
+                pb_update_steps.refresh()
+                tqdm.write(
+                    f"Epoch [{self.epoch}/{max_num_epochs}], Loss: {running_loss / len(self.train_loader):.4f}, Train Acc: {100 * train_acc:.2f}%{val_acc_str}")
 
-            is_final_epoch = epoch == max_num_epochs
-            if not is_final_epoch:
-                pb_batches.reset(total=len(train_loader))
-                pb_evaluate.reset(total=len(val_loader))
-
-            if self.should_stop_training_early(validation_accuracies, training_start):
-                num_epochs = epoch
+            if self.should_stop_training_early(self.validation_accuracies, training_start):
+                num_epochs = self.epoch
                 break
-        pb_batches.close()
-        pb_evaluate.close()
-        tqdm.write(
-            f"Elapsed for all epochs: {pb_epochs.format_dict['elapsed']:.2f}s, average per epoch: {1 / pb_epochs.format_dict['rate']:.2f}s, average per batch: {1 / pb_batches.format_dict['rate']:.2f}s")
 
-        # Shouldn't be necessary, but with tqdm they are not terminated for some reason, causing hanging at the next call
-        terminate_workers(train_loader, val_loader)
+        if self.verbose:
+            tqdm.write(
+                f"Total elapsed: {pb_update_steps.format_dict['elapsed']:.2f}s, average per update step: {1 / pb_update_steps.format_dict['rate']:.2f}s")
+            pb_update_steps.close()
+
+        # Shouldn't be necessary, should prevent tqdm-related hanging if it appears
+        terminate_workers(self.train_loader, self.val_loader)
 
         epochs = range(1, num_epochs + 1)
         training_elapsed = time.perf_counter() - training_start
         return TrainingResult(
-            training_losses=tuple(training_losses),
-            training_accuracies=tuple(training_accuracies),
-            validation_accuracies=tuple(validation_accuracies),
+            training_losses=tuple(self.training_losses),
+            training_accuracies=tuple(self.training_accuracies),
+            validation_accuracies=tuple(self.validation_accuracies),
             epochs=tuple(epochs),
-            update_steps=tuple(update_steps),
+            update_steps=tuple(self.recorded_update_steps),
             training_elapsed=training_elapsed,
         )
 

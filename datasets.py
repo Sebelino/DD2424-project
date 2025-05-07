@@ -1,3 +1,4 @@
+import copy
 from dataclasses import dataclass
 from typing import Optional
 
@@ -30,6 +31,9 @@ class DatasetParams:
     # Size of training + validation set. None means "all".
     trainval_size: Optional[int] = None
 
+    def copy(self) -> 'DatasetParams':
+        return copy.deepcopy(self)
+
 
 def make_datasets(dataset_params: DatasetParams, transform):
     trainval_dataset = load_dataset("trainval", transform)
@@ -52,7 +56,7 @@ def make_datasets(dataset_params: DatasetParams, transform):
         batch_size=dataset_params.batch_size,
         shuffle=True,
         num_workers=num_workers,
-        persistent_workers=True,
+        persistent_workers=False,
         pin_memory=True,
         generator=torch.Generator().manual_seed(dataset_params.shuffler_seed),
         worker_init_fn=Determinism.data_loader_worker_init_fn(dataset_params.shuffler_seed),
@@ -63,7 +67,7 @@ def make_datasets(dataset_params: DatasetParams, transform):
         batch_size=dataset_params.batch_size,
         shuffle=False,
         num_workers=num_workers,
-        persistent_workers=True,
+        persistent_workers=False,
         pin_memory=True,
         worker_init_fn=Determinism.data_loader_worker_init_fn(dataset_params.shuffler_seed),
     )
