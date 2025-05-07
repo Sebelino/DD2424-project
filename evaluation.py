@@ -53,7 +53,7 @@ def run_with_different_seeds(dataset_params: DatasetParams, training_params: Tra
     evaluate_runs(label_to_result)
 
 
-def run_comparison(dataset_params: DatasetParams, param_sets: Dict[str, TrainParams], trials: int):
+def run_comparison(dataset_params: DatasetParams, param_sets: Dict[str, TrainParams], trials: int = 1):
     dct = dict()
     for paramset_label, param_set in param_sets.items():
         param_set = param_set.copy()
