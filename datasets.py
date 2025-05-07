@@ -8,11 +8,11 @@ from torch.utils.data import DataLoader, random_split
 from determinism import Determinism
 
 
-def load_dataset(split_name: str, transform):
+def load_dataset(split_name: str, transform, target_types: str = "category"):
     return torchvision.datasets.OxfordIIITPet(
         root="./data",
         split=split_name,
-        target_types="category",
+        target_types=target_types,
         download=True,
         transform=transform,
     )
@@ -29,10 +29,14 @@ class DatasetParams:
     validation_set_fraction: float
     # Size of training + validation set. None means "all".
     trainval_size: Optional[int] = None
+    binary: Optional[bool] = False
 
 
 def make_datasets(dataset_params: DatasetParams, transform):
-    trainval_dataset = load_dataset("trainval", transform)
+    target_types = "category"
+    if dataset_params.binary:
+        target_types = "binary-category"
+    trainval_dataset = load_dataset("trainval", transform, target_types)
 
     if dataset_params.trainval_size is not None:
         subset_size = dataset_params.trainval_size
