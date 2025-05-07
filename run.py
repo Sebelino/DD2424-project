@@ -1,7 +1,7 @@
 from joblib import Memory
 
 from datasets import make_datasets, DatasetParams
-from training import TrainParams, Trainer, TrainingResult
+from training import TrainParams, Trainer, TrainingResult, FinishedAllEpochs
 
 USE_CACHE = True
 
@@ -15,5 +15,6 @@ else:
 def run(dataset_params: DatasetParams, training_params: TrainParams) -> TrainingResult:
     trainer = Trainer(training_params)
     train_loader, val_loader = make_datasets(dataset_params, trainer.transform)
-    result = trainer.train(train_loader, val_loader)
+    trainer.load(train_loader, val_loader)
+    result = trainer.train(stop_condition=FinishedAllEpochs())
     return result
