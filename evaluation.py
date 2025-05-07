@@ -29,17 +29,18 @@ def evaluate_runs(results: Dict[str, TrainingResult]):
 
 
 def evaluate_runs_ci(results_per_paramset: Dict[str, Dict[str, TrainingResult]]):
+    update_steps = dict()
+    training_accuracies = dict()
     validation_accuracies = dict()
     for paramset_label, paramset_results_dict in results_per_paramset.items():
-        accuracies_dict = {label: result.validation_accuracies for label, result in paramset_results_dict.items()}
-        validation_accuracies[paramset_label] = accuracies_dict
-    epochs = list(list(results_per_paramset.values())[0].values())[0].epochs
-    for paramset_results_dict in results_per_paramset.values():
-        for result in paramset_results_dict.values():
-            if result.epochs != epochs:
-                raise ValueError(
-                    f"The runs are not comparable because the number of points differ: {len(epochs)} vs. {result.epochs}")
-    make_run_comparison_ci_plot(epochs, validation_accuracies)
+        update_steps_dict = {label: result.update_steps for label, result in paramset_results_dict.items()}
+        update_steps_lst = list(update_steps_dict.values())[0]
+        update_steps[paramset_label] = update_steps_lst
+        train_acc_dict = {label: result.training_accuracies for label, result in paramset_results_dict.items()}
+        training_accuracies[paramset_label] = train_acc_dict
+        val_acc_dict = {label: result.validation_accuracies for label, result in paramset_results_dict.items()}
+        validation_accuracies[paramset_label] = val_acc_dict
+    make_run_comparison_ci_plot(update_steps, training_accuracies, validation_accuracies)
 
 
 def run_with_different_seeds(dataset_params: DatasetParams, training_params: TrainParams, trials: int):
