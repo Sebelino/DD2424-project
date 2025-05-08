@@ -1,4 +1,6 @@
 import logging
+from dataclasses import dataclass, asdict
+from typing import Callable, Any
 
 import optuna
 from joblib import Memory
@@ -7,6 +9,7 @@ from tqdm import tqdm
 
 from datasets import DatasetParams, make_datasets
 from training import TrainParams, Trainer, StopCondition
+from util import dumps_inline_lists
 
 USE_CACHE = True
 
@@ -16,21 +19,27 @@ else:
     memory = Memory(location=None, verbose=0)
 
 
-def objective(dataset_params: DatasetParams, params: TrainParams, trial: Trial):
+@dataclass
+class SearchParams:
+    learning_rate: Callable[[Trial], float]
+    weight_decay: Callable[[Trial], float]
+    momentum: Callable[[Trial], float]
+    momentum: Callable[[Trial], float]
+    unfreeze_epoch_1: Callable[[Trial], int]
+    unfreeze_epoch_2: Callable[[Trial, int], int]
+
+
+def objective(dataset_params: DatasetParams, params: TrainParams, search_params: SearchParams, trial: Trial):
     dataset_params = dataset_params.copy()
     params = params.copy()
 
-    params.optimizer.learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-1, log=True)
-    params.optimizer.weight_decay = trial.suggest_float("weight_decay", 1e-6, 1e-3, log=True)
-    params.optimizer.momentum = trial.suggest_float("momentum", 0.7, 0.99, log=False)
+    params.optimizer.learning_rate = search_params.learning_rate(trial)
+    params.optimizer.weight_decay = search_params.weight_decay(trial)
+    params.optimizer.momentum = search_params.momentum(trial)
 
-    unfreeze_1 = trial.suggest_int("unfreeze_epoch_1", 1, 5)
+    unfreeze_1 = search_params.unfreeze_epoch_1(trial)
     # Ensure second unfreeze is after first
-    unfreeze_2 = trial.suggest_int(
-        "unfreeze_epoch_2",
-        low=unfreeze_1 + 1,
-        high=9
-    )
+    unfreeze_2 = search_params.unfreeze_epoch_2(trial, unfreeze_1)
     params.unfreezing_epochs = (unfreeze_1, unfreeze_2)
 
     return objective_run(dataset_params, params, trial)
@@ -79,9 +88,10 @@ def objective_run(dataset_params, training_params, trial):
     return latest_val_acc
 
 
-def run_search(dataset_params: DatasetParams, training_params: TrainParams, n_trials: int):
-    tqdm.write("Running study with parameters:")
+def run_search(dataset_params: DatasetParams, training_params: TrainParams, search_params: SearchParams, n_trials: int):
+    tqdm.write("Running study with dataset parameters:")
     tqdm.write(dataset_params.pprint())
+    tqdm.write("and training parameters:")
     tqdm.write(training_params.pprint())
     # Create a study with TPE sampler and median pruner
     study = optuna.create_study(
@@ -105,7 +115,7 @@ def run_search(dataset_params: DatasetParams, training_params: TrainParams, n_tr
     handler.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
     optuna_logger.addHandler(handler)
 
-    study.optimize(lambda trial: objective(dataset_params, training_params, trial), n_trials=n_trials)
+    study.optimize(lambda trial: objective(dataset_params, training_params, search_params, trial), n_trials=n_trials)
 
     return {
         "trial_accuracies": [t.value for t in study.trials],
