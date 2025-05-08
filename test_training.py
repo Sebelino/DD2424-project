@@ -1,43 +1,6 @@
-import pytest
-
-from datasets import DatasetParams, make_datasets
-from determinism import Determinism
-from training import TrainParams, NagParams, Trainer, FinishedAllEpochs, FinishedEpochs
-
-
-@pytest.fixture
-def determinism():
-    return Determinism(seed=42).sow()
-
-
-@pytest.fixture
-def example_dataset_params(determinism):
-    return DatasetParams(
-        splitting_seed=determinism.seed,
-        shuffler_seed=determinism.seed,
-        batch_size=32,
-        trainval_size=100,  # Load a subset
-        validation_set_fraction=0.2,  # 20 % of trainval set
-    )
-
-
-@pytest.fixture
-def example_training_params(determinism) -> TrainParams:
-    return TrainParams(
-        seed=determinism.seed,
-        architecture="resnet50",
-        n_epochs=10,
-        optimizer=NagParams(
-            learning_rate=0.01,
-            weight_decay=1e-4,
-            momentum=0.9,
-        ),
-        freeze_layers=True,
-        unfreezing_epochs=(3, 6),
-        validation_freq=1,
-        time_limit_seconds=None,
-        val_acc_target=None,
-    )
+from datasets import make_datasets
+from conftest import example_dataset_params, example_training_params
+from training import Trainer, FinishedAllEpochs, FinishedEpochs
 
 
 def test_train_params(example_training_params):
@@ -55,11 +18,14 @@ def test_train_all_epochs(example_dataset_params, example_training_params):
 
     assert result.validation_accuracies[-1] > 0.50
 
+
 def test_train_each_epoch_individually(example_dataset_params, example_training_params):
     trainer = Trainer(example_training_params)
     train_loader, val_loader = make_datasets(example_dataset_params, trainer.transform)
     trainer.load(train_loader, val_loader)
+
     result = trainer.train(FinishedAllEpochs())
+
     val_accs1 = result.validation_accuracies
 
     trainer = Trainer(example_training_params)

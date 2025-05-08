@@ -1,12 +1,13 @@
 import copy
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, asdict
+from typing import Optional, Any
 
 import torch
 import torchvision
 from torch.utils.data import DataLoader, random_split
 
 from determinism import Determinism
+from util import dumps_inline_lists
 
 
 def load_dataset(split_name: str, transform, target_types: str = "category"):
@@ -34,6 +35,24 @@ class DatasetParams:
 
     def copy(self) -> 'DatasetParams':
         return copy.deepcopy(self)
+
+    def minimal_dict(self) -> dict[str, Any]:
+        def prune(obj: Any) -> Any:
+            if isinstance(obj, dict):
+                return {
+                    key: prune(val)
+                    for key, val in obj.items()
+                    if val is not None
+                }
+            if isinstance(obj, (list, tuple)):
+                pruned = [prune(val) for val in obj if val is not None]
+                return type(obj)(pruned)
+            return obj
+
+        return prune(asdict(self))
+
+    def pprint(self):
+        return dumps_inline_lists(self.minimal_dict())
 
 
 def make_datasets(dataset_params: DatasetParams, transform):
