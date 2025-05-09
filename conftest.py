@@ -1,7 +1,7 @@
 import pytest
 
+from determinism import Determinism # Must appear before any torch import
 from datasets import DatasetParams
-from determinism import Determinism
 from training import TrainParams, NagParams
 
 

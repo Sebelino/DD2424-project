@@ -1,4 +1,6 @@
 import copy
+import hashlib
+import os
 import time
 import itertools
 from abc import ABC, abstractmethod
@@ -14,7 +16,8 @@ from torchvision.models import ResNet18_Weights, ResNet34_Weights, ResNet50_Weig
 from torchvision.transforms import transforms
 from tqdm.auto import tqdm
 
-
+from datasets import DatasetParams
+from determinism import Determinism
 from util import dumps_inline_lists
 
 
@@ -159,7 +162,11 @@ class Trainer:
         resnet50=(ResNet50_Weights.DEFAULT, models.resnet50),
     )
 
-    def __init__(self, params: TrainParams, verbose=True):
+    def __init__(self, params: TrainParams, determinism: Determinism = None, verbose=True):
+        if determinism is not None:
+            determinism.sow()  # If you want consecutive trainings to yield identical results, you need to make sure to do this
+        params = params.copy()
+        self.determinism = determinism
         self.verbose = verbose
         self.device = self._make_device()
         self.transform = self.make_transform(params)
@@ -311,7 +318,7 @@ class Trainer:
 
         print(f"[Trainer] Unfroze last {l} blocks")
 
-    def load(self, labelled_train_loader, unlabelled_train_loader, val_loader):
+    def load_dataset(self, labelled_train_loader, unlabelled_train_loader, val_loader):
         self.labelled_train_loader = labelled_train_loader
         self.unlabelled_train_loader = unlabelled_train_loader
         self.val_loader = val_loader
@@ -422,6 +429,84 @@ class Trainer:
             update_steps=tuple(self.recorded_update_steps),
             training_elapsed=training_elapsed,
         )
+
+    def save(self, dataset_params: DatasetParams):
+        path = self.make_trainer_path(dataset_params, self.params)
+        self.save_checkpoint(path)
+
+    @classmethod
+    def try_load(cls, dataset_params: DatasetParams, training_params: TrainParams, determinism: Determinism = None):
+        try:
+            trainer = cls.load(dataset_params, training_params, determinism)
+        except FileNotFoundError:
+            trainer = Trainer(training_params)
+            train_loader, val_loader = make_datasets(dataset_params, trainer.transform)
+            trainer.load_dataset(train_loader, val_loader)
+            trainer.train(stop_condition=FinishedAllEpochs())
+        return trainer
+
+    @classmethod
+    def load(cls, dataset_params: DatasetParams, training_params: TrainParams, determinism: Determinism = None):
+        path = cls.make_trainer_path(dataset_params, training_params)
+        trainer = Trainer(training_params, determinism)
+        trainer.load_checkpoint(path)
+        return trainer
+
+    @classmethod
+    def make_trainer_path(cls, dataset_params: DatasetParams, training_params: TrainParams):
+        # DatasetParams and TrainingParams should together be able to uniquely identify a Trainer
+        key = hashlib.md5(f"{dataset_params}{training_params}".encode()).hexdigest()
+        return f"runs/checkpoints/{key}.pth"
+
+    def save_checkpoint(self, path: str):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+
+        torch.save({
+            'epoch': self.epoch,
+            'update_step': self.update_step,
+            'model_state_dict': self.model.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'training_losses': self.training_losses,
+            'training_accuracies': self.training_accuracies,
+            'validation_accuracies': self.validation_accuracies,
+        }, path)
+        if self.verbose:
+            print(f"[Trainer] Saved checkpoint to {path}")
+
+    def load_checkpoint(self, path: str, map_location=None):
+        checkpoint = torch.load(path, map_location=map_location or self.device)
+        self.epoch = checkpoint.get('epoch', 0)
+        self.update_step = checkpoint.get('update_step', 0)
+        self.model.load_state_dict(checkpoint['model_state_dict'])
+
+        # 3) replay the freeze/unfreeze schedule up to self.epoch
+        #    a) freeze everything if you used freeze_layers=True
+        if self.params.freeze_layers:
+            for p in self.model.parameters():
+                p.requires_grad = False
+
+        #    b) always unfreeze the final FC layer
+        for p in self.model.fc.parameters():
+            p.requires_grad = True
+
+        #    c) unfreeze any of layer3/layer4 that you’d un-frozen during training
+        #       (your epoch_to_unfreezing maps epoch→(label, layer_module))
+        for unfreeze_epoch, (label, layer_mod) in self.epoch_to_unfreezing.items():
+            if unfreeze_epoch <= self.epoch:
+                for p in layer_mod.parameters():
+                    p.requires_grad = True
+
+        # 4) now rebuild your optimizer so its param-groups line up
+        self.optimizer = self._make_optimizer(self.params, self.model)
+
+        # 5) load the saved optimizer state (now the group sizes match)
+        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+
+        self.training_losses = list(checkpoint.get('training_losses', []))
+        self.training_accuracies = list(checkpoint.get('training_accuracies', []))
+        self.validation_accuracies = list(checkpoint.get('validation_accuracies', []))
+        if self.verbose:
+            print(f"[Trainer] Loaded checkpoint from {path} (epoch {self.epoch})")
 
 
 def terminate_workers(labelled_train_loader, unlabelled_train_loader, val_loader):
