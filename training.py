@@ -80,7 +80,7 @@ class TrainParams:
     data_augmentation: Optional[Literal["true", "false"]] = None
     # Unsupervised learning params
     unsup_weight: Optional[float] = 0.5
-    psuedo_threshold: Optional[float] = 0.95
+    pseudo_threshold: Optional[float] = 0.95
     # Masked fine-tuning
     masked_finetune: bool = False  # whether to run GPS-style masked fine-tuning
     mask_K: int = 1  # number of weights to update per neuron
@@ -136,7 +136,7 @@ class StopCondition(ABC):
 class FinishedAllEpochs(StopCondition):
     def remaining_steps(self, trainer: 'Trainer') -> int:
         max_num_epochs = trainer.params.n_epochs
-        max_total_update_steps = max_num_epochs * len(trainer.labelled_train_loader)
+        max_total_update_steps = max_num_epochs * (len(trainer.labelled_train_loader) + len(trainer.unlabelled_train_loader))
         return max_total_update_steps
 
     def should_stop(self, trainer: 'Trainer') -> bool:
@@ -151,7 +151,7 @@ class FinishedEpochs(StopCondition):
     def remaining_steps(self, trainer: 'Trainer') -> int:
         self.epoch_at_start_of_session = trainer.epoch
         remaining_epochs = self.epoch_count - (trainer.epoch - self.epoch_at_start_of_session)
-        return remaining_epochs * len(trainer.train_loader)
+        return remaining_epochs * (len(trainer.labelled_train_loader) + len(trainer.unlabelled_train_loader))
 
     def should_stop(self, trainer: 'Trainer') -> bool:
         return trainer.epoch >= self.epoch_at_start_of_session + self.epoch_count
@@ -279,6 +279,45 @@ class Trainer:
         # Recreate optimizer after unfreezing more layers
         self.optimizer = self._make_optimizer(self.params, self.model)
 
+    def maybe_unsupervised_learning(self, model, criterion, running_loss, pb_update_steps):
+        if self.unlabelled_train_loader is None:
+            return running_loss, pb_update_steps
+            
+        unsup_weight = self.params.unsup_weight
+        #pseudo_threshold = self.params.pseudo_threshold
+        for batch_u in self.unlabelled_train_loader:
+            if isinstance(batch_u, (list, tuple)):
+                x_u = batch_u[0]
+            else:
+                x_u = batch_u
+                
+            x_u = x_u.to(self.device)
+            
+            with torch.no_grad():
+                logits_u = model(x_u)
+                pseudo = logits_u.argmax(dim=1)  # take the max-logit class
+            
+            # train on all pseudo-labels
+            self.optimizer.zero_grad()
+            _, unsup_loss = backward_pass(self, x_u, pseudo, criterion)
+            running_loss += unsup_weight * unsup_loss.item()
+
+            self.update_step += 1
+            if self.verbose:
+                pb_update_steps.update(1)  # Move the progress bar by 1
+                
+                #probs_u, pseudo = F.softmax(logits_u, dim=1).max(1)
+                #mask = probs_u.ge(pseudo_threshold)
+    
+            # if mask.any():
+            #     inputs_u, labels_u = x_u[mask], pseudo[mask]
+            #     self.optimizer.zero_grad()
+            #     _, unsup_loss = backward_pass(self, inputs_u, labels_u, criterion)
+            #     running_loss += unsup_weight * unsup_loss.item()
+
+        return running_loss, pb_update_steps
+                
+
     def should_record_metrics(self) -> bool:
         if self.params.validation_freq == 1:
             return True
@@ -341,15 +380,6 @@ class Trainer:
         self.maybe_unfreeze_last_layers(self.params.unfreeze_last_l_blocks, model)
         self.maybe_mask_fine_tune()
 
-        # pseudo-labelling
-        unlabelled_iter = None
-        psuedo_threshold = None
-        unsup_weight = None
-        if self.unlabelled_train_loader is not None:
-            unlabelled_iter = itertools.cycle(self.unlabelled_train_loader)
-            unsup_weight = self.params.unsup_weight
-            psuedo_threshold = self.params.psuedo_threshold
-
         remaining_steps = stop_condition.remaining_steps(self)
         pb_update_steps = None
         if self.verbose:
@@ -363,6 +393,9 @@ class Trainer:
 
             self.maybe_unfreeze(self.epoch)
 
+            # psuedo-labelling
+            running_loss, pb_update_steps = self.maybe_unsupervised_learning(model, criterion, running_loss, pb_update_steps)
+
             for inputs, labels in self.labelled_train_loader:
                 if self.verbose:
                     pb_update_steps.update(1)  # Move the progress bar by 1
@@ -373,26 +406,6 @@ class Trainer:
                 running_loss += loss.item()
                 _, predicted = torch.max(outputs.data, 1)
                 total += labels.size(0)
-
-                # psuedo-labelling
-                if self.unlabelled_train_loader is not None:
-                    batch_u = next(unlabelled_iter)
-                    if isinstance(batch_u, (list, tuple)):
-                        x_u = batch_u[0]
-                    else:
-                        x_u = batch_u
-                    x_u = x_u.to(self.device)
-                    with torch.no_grad():
-                        logits_u = model(x_u)
-                        probs_u, pseudo = F.softmax(logits_u, dim=1).max(1)
-                        mask = probs_u.ge(psuedo_threshold)
-
-                    if mask.any():
-                        inputs_u = x_u[mask]
-                        labels_u = pseudo[mask]
-                        _, unsup_loss = backward_pass(self, inputs_u, labels_u, criterion)
-                        running_loss += unsup_weight * unsup_loss.item()
-
                 correct += (predicted == labels).sum().item()
 
             train_acc = correct / total
