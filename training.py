@@ -1,16 +1,19 @@
 import copy
 import time
+import itertools
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, asdict
 from typing import Literal, Tuple, Optional, Any
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
 from torchvision import models
 from torchvision.models import ResNet18_Weights, ResNet34_Weights, ResNet50_Weights
 from torchvision.transforms import transforms
 from tqdm.auto import tqdm
+
 
 from util import dumps_inline_lists
 
@@ -72,6 +75,10 @@ class TrainParams:
     unfreeze_last_l_blocks: Optional[int] = None
     # data augmentation
     data_augmentation: Optional[Literal["true", "false"]] = None
+    # Unsupervised learning params
+    unsup_weight: Optional[float] = 0.5
+    psuedo_threshold: Optional[float] = 0.95
+    
 
     def minimal_dict(self) -> dict[str, Any]:
         def prune(obj: Any) -> Any:
@@ -123,7 +130,7 @@ class StopCondition(ABC):
 class FinishedAllEpochs(StopCondition):
     def remaining_steps(self, trainer: 'Trainer') -> int:
         max_num_epochs = trainer.params.n_epochs
-        max_total_update_steps = max_num_epochs * len(trainer.train_loader)
+        max_total_update_steps = max_num_epochs * len(trainer.labelled_train_loader)
         return max_total_update_steps
 
     def should_stop(self, trainer: 'Trainer') -> bool:
@@ -167,7 +174,8 @@ class Trainer:
         self.training_accuracies = []
         self.training_losses = []
         self.recorded_update_steps = []
-        self.train_loader = None
+        self.labelled_train_loader = None
+        self.unlabelled_train_loader = None
         self.val_loader = None
 
     @classmethod
@@ -303,13 +311,14 @@ class Trainer:
 
         print(f"[Trainer] Unfroze last {l} blocks")
 
-    def load(self, train_loader, val_loader):
-        self.train_loader = train_loader
+    def load(self, labelled_train_loader, unlabelled_train_loader, val_loader):
+        self.labelled_train_loader = labelled_train_loader
+        self.unlabelled_train_loader = unlabelled_train_loader
         self.val_loader = val_loader
 
     def train(self, stop_condition: StopCondition) -> TrainingResult:
         training_start = time.perf_counter()
-        if self.train_loader is None or self.val_loader is None:
+        if self.labelled_train_loader is None or self.val_loader is None:
             raise ValueError("Must call Trainer.load(...) before training")
         criterion = nn.CrossEntropyLoss()
         model = self.model
@@ -319,6 +328,12 @@ class Trainer:
         model.train()
 
         self.maybe_unfreeze_last_layers(self.params.unfreeze_last_l_blocks, model)
+
+        # pseudo-labelling 
+        if self.unlabelled_train_loader is not None: 
+            unlabelled_iter = itertools.cycle(self.unlabelled_train_loader)
+            unsup_weight = self.params.unsup_weight
+            psuedo_threshold = self.params.psuedo_threshold
 
         remaining_steps = stop_condition.remaining_steps(self)
         if self.verbose:
@@ -332,7 +347,7 @@ class Trainer:
 
             self.maybe_unfreeze(self.epoch)
 
-            for inputs, labels in self.train_loader:
+            for inputs, labels in self.labelled_train_loader:
                 if self.verbose:
                     pb_update_steps.update(1)  # Move progress bar by 1
                 self.update_step += 1
@@ -342,6 +357,27 @@ class Trainer:
                 running_loss += loss.item()
                 _, predicted = torch.max(outputs.data, 1)
                 total += labels.size(0)
+
+                #psuedo-labelling
+                if self.unlabelled_train_loader is not None:
+                    batch_u = next(unlabelled_iter)
+                    if isinstance(batch_u, (list, tuple)):
+                        x_u = batch_u[0]
+                    else:
+                        x_u = batch_u
+                    x_u = x_u.to(self.device)
+                    with torch.no_grad():
+                        logits_u = model(x_u)
+                        probs_u, pseudo = F.softmax(logits_u, dim=1).max(1)
+                        mask = probs_u.ge(psuedo_threshold)
+
+                    if mask.any():
+                        inputs_u  = x_u[mask]
+                        labels_u  = pseudo[mask]
+                        _, unsup_loss = backward_pass(self, inputs_u, labels_u, criterion)
+                        running_loss += unsup_weight * unsup_loss.item()
+                    
+                
                 correct += (predicted == labels).sum().item()
 
             train_acc = correct / total
@@ -353,7 +389,7 @@ class Trainer:
             else:
                 val_acc = None
                 val_acc_str = ""
-            self.training_losses.append(running_loss / len(self.train_loader))
+            self.training_losses.append(running_loss / len(self.labelled_train_loader))
             self.training_accuracies.append(train_acc)
             if should_record_metrics:
                 self.recorded_update_steps.append(self.update_step)
@@ -362,7 +398,7 @@ class Trainer:
             if self.verbose:
                 pb_update_steps.refresh()
                 tqdm.write(
-                    f"Epoch [{self.epoch}/{max_num_epochs}], Loss: {running_loss / len(self.train_loader):.4f}, Train Acc: {100 * train_acc:.2f}%{val_acc_str}")
+                    f"Epoch [{self.epoch}/{max_num_epochs}], Loss: {running_loss / len(self.labelled_train_loader):.4f}, Train Acc: {100 * train_acc:.2f}%{val_acc_str}")
 
             if self.should_stop_training_early(self.validation_accuracies, training_start):
                 num_epochs = self.epoch
@@ -374,7 +410,7 @@ class Trainer:
             pb_update_steps.close()
 
         # Shouldn't be necessary, should prevent tqdm-related hanging if it appears
-        terminate_workers(self.train_loader, self.val_loader)
+        terminate_workers(self.labelled_train_loader, self.unlabelled_train_loader, self.val_loader)
 
         epochs = range(1, num_epochs + 1)
         training_elapsed = time.perf_counter() - training_start
@@ -388,8 +424,8 @@ class Trainer:
         )
 
 
-def terminate_workers(train_loader, val_loader):
-    for loader in (train_loader, val_loader):
+def terminate_workers(labelled_train_loader, unlabelled_train_loader, val_loader):
+    for loader in (labelled_train_loader, unlabelled_train_loader, val_loader):
         it = getattr(loader, "_iterator", None)
         if it is not None:
             it._shutdown_workers()

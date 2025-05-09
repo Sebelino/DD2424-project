@@ -79,8 +79,8 @@ class TqdmLoggingHandler(logging.Handler):
 @memory.cache(ignore=["trial"])
 def objective_run(dataset_params, training_params, trial):
     trainer = Trainer(training_params, verbose=True)
-    train_loader, val_loader = make_datasets(dataset_params, trainer.transform)
-    trainer.load(train_loader, val_loader)
+    labelled_train_loader, unlabelled_train_loader, val_loader = make_datasets(dataset_params, trainer.transform)
+    trainer.load(labelled_train_loader, unlabelled_train_loader, val_loader)
     result = trainer.train(stop_condition=FinishedOrPruned(trial))
     if len(result.epochs) < trainer.params.n_epochs:  # This means we stopped prematurely, before all epochs were finished
         raise optuna.TrialPruned()

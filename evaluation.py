@@ -66,6 +66,17 @@ def run_comparison(dataset_params: DatasetParams, param_sets: Dict[str, TrainPar
             dct[paramset_label][run_label] = result
     evaluate_runs_ci(dct)
 
+def run_dataset_comparison(param_sets: Dict[str, DatasetParams], training_params: TrainParams, trials: int = 1):
+    dct = dict()
+    for paramset_label, param_set in param_sets.items():
+        param_set = param_set.copy()
+        dct[paramset_label] = dict()
+        for i in range(trials):
+            result = run(param_set, training_params)
+            run_label = f"Val acc seed={training_params.seed}"
+            dct[paramset_label][run_label] = result
+    evaluate_runs_ci(dct)
+
 
 def evaluate_test_accuracy_and_misclassified(trainer: Trainer, test_loader, test_dataset):
     from matplotlib import pyplot as plt

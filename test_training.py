@@ -12,8 +12,8 @@ def test_train_params(example_training_params):
 
 def test_train_all_epochs(example_dataset_params, example_training_params):
     trainer = Trainer(example_training_params)
-    train_loader, val_loader = make_datasets(example_dataset_params, trainer.transform)
-    trainer.load(train_loader, val_loader)
+    labelled_train_loader, unlabelled_train_loader, val_loader = make_datasets(example_dataset_params, trainer.transform)
+    trainer.load(labelled_train_loader, unlabelled_train_loader, val_loader)
     result = trainer.train(FinishedAllEpochs())
 
     assert result.validation_accuracies[-1] > 0.50
@@ -21,16 +21,16 @@ def test_train_all_epochs(example_dataset_params, example_training_params):
 
 def test_train_each_epoch_individually(example_dataset_params, example_training_params):
     trainer = Trainer(example_training_params)
-    train_loader, val_loader = make_datasets(example_dataset_params, trainer.transform)
-    trainer.load(train_loader, val_loader)
+    labelled_train_loader, unlabelled_train_loader, val_loader = make_datasets(example_dataset_params, trainer.transform)
+    trainer.load(labelled_train_loader, unlabelled_train_loader, val_loader)
 
     result = trainer.train(FinishedAllEpochs())
 
     val_accs1 = result.validation_accuracies
 
     trainer = Trainer(example_training_params)
-    train_loader, val_loader = make_datasets(example_dataset_params, trainer.transform)
-    trainer.load(train_loader, val_loader)
+    labelled_train_loader, unlabelled_train_loader, val_loader = make_datasets(example_dataset_params, trainer.transform)
+    trainer.load(labelled_train_loader, unlabelled_train_loader, val_loader)
     for epoch in range(example_training_params.n_epochs):
         result = trainer.train(FinishedEpochs(1))
     val_accs2 = result.validation_accuracies

@@ -14,7 +14,7 @@ else:
 @memory.cache
 def run(dataset_params: DatasetParams, training_params: TrainParams) -> TrainingResult:
     trainer = Trainer(training_params)
-    train_loader, val_loader = make_datasets(dataset_params, trainer.transform)
-    trainer.load(train_loader, val_loader)
+    labelled_train_loader, unlabelled_train_loader, val_loader = make_datasets(dataset_params, trainer.transform)
+    trainer.load(labelled_train_loader, unlabelled_train_loader, val_loader)
     result = trainer.train(stop_condition=FinishedAllEpochs())
     return result

@@ -4,7 +4,7 @@ from typing import Optional, Any
 
 import torch
 import torchvision
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader, random_split, Dataset
 
 from determinism import Determinism
 from util import dumps_inline_lists
@@ -19,6 +19,16 @@ def load_dataset(split_name: str, transform, target_types: str = "category"):
         transform=transform,
     )
 
+# Wrap the “unlabelled” subset so it only returns the image
+class UnlabelledDataset(Dataset):
+    def __init__(self, ds):
+        self.ds = ds
+    def __len__(self):
+        return len(self.ds)
+    def __getitem__(self, i):
+        img, *_ = self.ds[i]   # drop all labels
+        return img
+
 
 @dataclass
 class DatasetParams:
@@ -32,6 +42,7 @@ class DatasetParams:
     # Size of training + validation set. None means "all".
     trainval_size: Optional[int] = None
     binary: Optional[bool] = False
+    labelled_data_fraction: Optional[float] = 1.0
 
     def copy(self) -> 'DatasetParams':
         return copy.deepcopy(self)
@@ -74,8 +85,14 @@ def make_datasets(dataset_params: DatasetParams, transform):
     splitter_generator = torch.Generator().manual_seed(dataset_params.splitting_seed)
     train_subset, val_subset = random_split(trainval_dataset, [num_train, num_val], generator=splitter_generator)
 
-    train_loader = DataLoader(
-        train_subset,
+    # Unlabelled dataset if present
+    num_labelled = int(dataset_params.labelled_data_fraction * num_train)
+    num_unlabelled = num_train - num_labelled
+    labelled_subset, unlabelled_subset = random_split(train_subset, [num_labelled, num_unlabelled], generator=splitter_generator) 
+        
+
+    labelled_train_loader = DataLoader(
+        labelled_subset,
         batch_size=dataset_params.batch_size,
         shuffle=True,
         num_workers=num_workers,
@@ -84,6 +101,20 @@ def make_datasets(dataset_params: DatasetParams, transform):
         generator=torch.Generator().manual_seed(dataset_params.shuffler_seed),
         worker_init_fn=Determinism.data_loader_worker_init_fn(dataset_params.shuffler_seed),
     )
+
+    unlabelled_train_loader = None
+    if len(unlabelled_subset) > 0:
+        unlabelled_train_loader = DataLoader(
+            unlabelled_subset,
+            batch_size=dataset_params.batch_size,
+            shuffle=True,
+            num_workers=num_workers,
+            persistent_workers=False,
+            pin_memory=True,
+            generator=torch.Generator().manual_seed(dataset_params.shuffler_seed),
+            worker_init_fn=Determinism.data_loader_worker_init_fn(dataset_params.shuffler_seed),
+        )
+        
 
     val_loader = DataLoader(
         val_subset,
@@ -95,4 +126,4 @@ def make_datasets(dataset_params: DatasetParams, transform):
         worker_init_fn=Determinism.data_loader_worker_init_fn(dataset_params.shuffler_seed),
     )
 
-    return train_loader, val_loader
+    return labelled_train_loader, unlabelled_train_loader, val_loader
