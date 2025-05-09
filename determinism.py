@@ -1,9 +1,11 @@
+from dataclasses import dataclass
+
 import numpy as np
 
 
+@dataclass(frozen=True)
 class Determinism:
-    def __init__(self, seed=0):
-        self.seed = seed
+    seed: int = 0
 
     def sow(self):
         import os
@@ -25,5 +27,19 @@ class Determinism:
         return self
 
     @staticmethod
-    def data_loader_worker_init_fn(seed):
-        return lambda worker_id: np.random.seed(seed + worker_id)
+    def data_loader_worker_init_fn(base_seed):
+        def init_fn(worker_id):
+            import random
+            import torch
+            seed = base_seed + worker_id
+            # Python RNG
+            random.seed(seed)
+            # NumPy RNG
+            np.random.seed(seed)
+            # Torch CPU RNG
+            torch.manual_seed(seed)
+            # (If you ever use CUDA inside workers:)
+            torch.cuda.manual_seed(seed)
+            torch.cuda.manual_seed_all(seed)
+
+        return init_fn

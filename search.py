@@ -1,6 +1,6 @@
 import logging
-from dataclasses import dataclass, asdict
-from typing import Callable, Any
+from dataclasses import dataclass
+from typing import Callable
 
 import optuna
 from joblib import Memory
@@ -8,8 +8,8 @@ from optuna import Trial
 from tqdm import tqdm
 
 from datasets import DatasetParams, make_datasets
+from determinism import Determinism
 from training import TrainParams, Trainer, StopCondition
-from util import dumps_inline_lists
 
 USE_CACHE = True
 
@@ -29,7 +29,8 @@ class SearchParams:
     unfreeze_epoch_2: Callable[[Trial, int], int]
 
 
-def objective(dataset_params: DatasetParams, params: TrainParams, search_params: SearchParams, trial: Trial):
+def objective(dataset_params: DatasetParams, params: TrainParams, search_params: SearchParams, determinism: Determinism,
+              trial: Trial):
     dataset_params = dataset_params.copy()
     params = params.copy()
 
@@ -42,7 +43,7 @@ def objective(dataset_params: DatasetParams, params: TrainParams, search_params:
     unfreeze_2 = search_params.unfreeze_epoch_2(trial, unfreeze_1)
     params.unfreezing_epochs = (unfreeze_1, unfreeze_2)
 
-    return objective_run(dataset_params, params, trial)
+    return objective_run(dataset_params, params, determinism, trial)
 
 
 class FinishedOrPruned(StopCondition):
@@ -77,10 +78,10 @@ class TqdmLoggingHandler(logging.Handler):
 
 
 @memory.cache(ignore=["trial"])
-def objective_run(dataset_params, training_params, trial):
-    trainer = Trainer(training_params, verbose=True)
+def objective_run(dataset_params, training_params, determinism, trial):
+    trainer = Trainer(training_params, determinism, verbose=True)
     train_loader, val_loader = make_datasets(dataset_params, trainer.transform)
-    trainer.load(train_loader, val_loader)
+    trainer.load_dataset(train_loader, val_loader)
     result = trainer.train(stop_condition=FinishedOrPruned(trial))
     if len(result.epochs) < trainer.params.n_epochs:  # This means we stopped prematurely, before all epochs were finished
         raise optuna.TrialPruned()
@@ -88,7 +89,7 @@ def objective_run(dataset_params, training_params, trial):
     return latest_val_acc
 
 
-def run_search(dataset_params: DatasetParams, training_params: TrainParams, search_params: SearchParams, n_trials: int):
+def run_search(dataset_params: DatasetParams, training_params: TrainParams, search_params: SearchParams, determinism: Determinism, n_trials: int):
     tqdm.write("Running study with dataset parameters:")
     tqdm.write(dataset_params.pprint())
     tqdm.write("and training parameters:")
@@ -115,7 +116,7 @@ def run_search(dataset_params: DatasetParams, training_params: TrainParams, sear
     handler.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
     optuna_logger.addHandler(handler)
 
-    study.optimize(lambda trial: objective(dataset_params, training_params, search_params, trial), n_trials=n_trials)
+    study.optimize(lambda trial: objective(dataset_params, training_params, search_params, determinism, trial), n_trials=n_trials)
 
     return {
         "trial_accuracies": [t.value for t in study.trials],

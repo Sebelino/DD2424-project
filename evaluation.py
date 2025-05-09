@@ -67,8 +67,29 @@ def run_comparison(dataset_params: DatasetParams, param_sets: Dict[str, TrainPar
     evaluate_runs_ci(dct)
 
 
+def evaluate_test_accuracy(trainer: Trainer, test_loader):
+    import torch
+    model = trainer.model
+    loader = test_loader
+    device = trainer.device
+
+    model.eval()
+    correct = 0
+    total = 0
+
+    with torch.no_grad():
+        for inputs, labels in tqdm(loader, desc="Evaluating"):
+            inputs, labels = inputs.to(device), labels.to(device)
+            outputs = model(inputs)
+            _, predicted = outputs.max(1)
+            total += labels.size(0)
+            correct += (predicted == labels).sum().item()
+
+    model.train()
+    return 100.0 * correct / total
+
+
 def evaluate_test_accuracy_and_misclassified(trainer: Trainer, test_loader, test_dataset):
-    from matplotlib import pyplot as plt
     import torch
     def collect_misclassified(model, loader, device, dataset):
         model.eval()
@@ -95,19 +116,18 @@ def evaluate_test_accuracy_and_misclassified(trainer: Trainer, test_loader, test
         model.train()
         return 100 * correct / total, misclassified
 
-    # Directory for saving misclassified images
-    misclassified_dir = "./misclassified"
+    final_test_acc, misclassified_samples = collect_misclassified(
+        trainer.model,
+        test_loader,
+        trainer.device,
+        test_dataset
+    )
+    return final_test_acc, misclassified_samples
 
-    if os.path.exists(misclassified_dir):
-        shutil.rmtree(misclassified_dir)
-    os.makedirs(misclassified_dir, exist_ok=True)
 
-    final_test_acc, misclassified_samples = collect_misclassified(trainer.model, test_loader,
-                                                                  trainer.device,
-                                                                  test_dataset)
-    print(f"Final Test Accuracy: {final_test_acc:.2f}%")
-    print(f"Number of misclassified samples: {len(misclassified_samples)}")
-
+def show_misclassified(misclassified_samples):
+    from matplotlib import pyplot as plt
+    from PIL import Image
     def to_text(label: int):
         breed_names = [
             "Abyssinian", "Bengal", "Birman", "Bombay", "British_Shorthair", "Egyptian_Mau",
@@ -121,7 +141,12 @@ def evaluate_test_accuracy_and_misclassified(trainer: Trainer, test_loader, test
         ]
         return breed_names[label]
 
-    from PIL import Image
+    # Directory for saving misclassified images
+    misclassified_dir = "./misclassified"
+
+    if os.path.exists(misclassified_dir):
+        shutil.rmtree(misclassified_dir)
+    os.makedirs(misclassified_dir, exist_ok=True)
 
     # Plot the first 5 misclassified images
     num_to_plot = min(5, len(misclassified_samples))
