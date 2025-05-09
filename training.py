@@ -1,8 +1,8 @@
 import copy
 import hashlib
+import itertools
 import os
 import time
-import itertools
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, asdict
 from typing import Literal, Tuple, Optional, Any
@@ -81,7 +81,10 @@ class TrainParams:
     # Unsupervised learning params
     unsup_weight: Optional[float] = 0.5
     psuedo_threshold: Optional[float] = 0.95
-    
+    # Masked fine-tuning
+    masked_finetune: bool = False  # whether to run GPS-style masked fine-tuning
+    mask_K: int = 1  # number of weights to update per neuron
+    contrastive_temp: float = 0.1  # temperature for supervised contrastive stage
 
     def minimal_dict(self) -> dict[str, Any]:
         def prune(obj: Any) -> Any:
@@ -184,6 +187,7 @@ class Trainer:
         self.labelled_train_loader = None
         self.unlabelled_train_loader = None
         self.val_loader = None
+        self._masks: dict[str, torch.Tensor] = {}
 
     @classmethod
     def _make_model(cls, params: TrainParams, device):
@@ -335,14 +339,19 @@ class Trainer:
         model.train()
 
         self.maybe_unfreeze_last_layers(self.params.unfreeze_last_l_blocks, model)
+        self.maybe_mask_fine_tune()
 
-        # pseudo-labelling 
-        if self.unlabelled_train_loader is not None: 
+        # pseudo-labelling
+        unlabelled_iter = None
+        psuedo_threshold = None
+        unsup_weight = None
+        if self.unlabelled_train_loader is not None:
             unlabelled_iter = itertools.cycle(self.unlabelled_train_loader)
             unsup_weight = self.params.unsup_weight
             psuedo_threshold = self.params.psuedo_threshold
 
         remaining_steps = stop_condition.remaining_steps(self)
+        pb_update_steps = None
         if self.verbose:
             pb_update_steps = tqdm(range(1, remaining_steps + 1), desc="Update step", leave=True)  # Progress bar
 
@@ -356,7 +365,7 @@ class Trainer:
 
             for inputs, labels in self.labelled_train_loader:
                 if self.verbose:
-                    pb_update_steps.update(1)  # Move progress bar by 1
+                    pb_update_steps.update(1)  # Move the progress bar by 1
                 self.update_step += 1
                 inputs, labels = inputs.to(self.device), labels.to(self.device)
                 self.optimizer.zero_grad()
@@ -365,7 +374,7 @@ class Trainer:
                 _, predicted = torch.max(outputs.data, 1)
                 total += labels.size(0)
 
-                #psuedo-labelling
+                # psuedo-labelling
                 if self.unlabelled_train_loader is not None:
                     batch_u = next(unlabelled_iter)
                     if isinstance(batch_u, (list, tuple)):
@@ -379,12 +388,11 @@ class Trainer:
                         mask = probs_u.ge(psuedo_threshold)
 
                     if mask.any():
-                        inputs_u  = x_u[mask]
-                        labels_u  = pseudo[mask]
+                        inputs_u = x_u[mask]
+                        labels_u = pseudo[mask]
                         _, unsup_loss = backward_pass(self, inputs_u, labels_u, criterion)
                         running_loss += unsup_weight * unsup_loss.item()
-                    
-                
+
                 correct += (predicted == labels).sum().item()
 
             train_acc = correct / total
@@ -430,20 +438,83 @@ class Trainer:
             training_elapsed=training_elapsed,
         )
 
+    def maybe_mask_fine_tune(self):
+        # if masked fine-tuning is requested, run the mask computation
+        if self.params.masked_finetune:
+            self._compute_masks()
+            # attach gradient hooks so only masked entries get nonzero grads
+            for name, W in self.model.named_parameters():
+                mask = self._masks.get(name)
+                if mask is not None:
+                    W.requires_grad_(True)
+
+                    def hook(g, mask=mask):
+                        return g * mask.to(g.device)
+
+                    W.register_hook(hook)
+            # make sure the classifier head is trainable again
+            for p in self.model.fc.parameters():
+                p.requires_grad = True
+            # rebuild optimizer so it includes the now-trainable fc and masked backbone weights
+            self.optimizer = self._make_optimizer(self.params, self.model)
+
+    def _compute_masks(self):
+        """
+        Stage 1: run one forward/backward pass with a tiny projection head + SupCon loss,
+        then for each weight tensor pick the top-K gradients per output neuron.
+        """
+        # freeze current classifier head
+        for p in self.model.fc.parameters():
+            p.requires_grad = False
+        # swap out fc → Identity so we get features
+        orig_fc = self.model.fc
+        self.model.fc = nn.Identity()
+
+        # build a small projection head on top of features
+        d = orig_fc.in_features
+        proj_head = nn.Sequential(
+            nn.Linear(d, d),
+            nn.ReLU(),
+            nn.Linear(d, d),
+        ).to(self.device)
+
+        # one gradient pass
+        self.model.train()
+        proj_head.train()
+        inputs, labels = next(iter(self.labelled_train_loader))
+        inputs, labels = inputs.to(self.device), labels.to(self.device)
+
+        # compute SupCon loss (you'll need a SupCon implementation)
+        features = self.model(inputs)
+        z = proj_head(features)
+        from masked_fine_tuning import supervised_contrastive_loss
+        loss = supervised_contrastive_loss(z, labels, self.params.contrastive_temp)
+        loss.backward()
+
+        # build masks: for each weight tensor select top-K grads per output neuron
+        for name, W in self.model.named_parameters():
+            if W.grad is None: continue
+            G = W.grad.abs()
+            mask = torch.zeros_like(G)
+            K = self.params.mask_K
+            # assume W shape [in_dim, out_dim]
+            topk = torch.topk(G, k=K, dim=0).indices  # shape [K, out_dim]
+            mask[topk, torch.arange(G.size(1))] = 1
+            self._masks[name] = mask
+
+        # restore fc, clear grads
+        self.model.fc = orig_fc
+        # re-enable the classifier head for the upcoming cross-entropy stage
+        for p in self.model.fc.parameters():
+            p.requires_grad = True
+
+        proj_head.zero_grad()
+        for p in self.model.parameters():
+            p.grad = None
+
     def save(self, dataset_params: DatasetParams):
         path = self.make_trainer_path(dataset_params, self.params)
         self.save_checkpoint(path)
-
-    @classmethod
-    def try_load(cls, dataset_params: DatasetParams, training_params: TrainParams, determinism: Determinism = None):
-        try:
-            trainer = cls.load(dataset_params, training_params, determinism)
-        except FileNotFoundError:
-            trainer = Trainer(training_params)
-            train_loader, val_loader = make_datasets(dataset_params, trainer.transform)
-            trainer.load_dataset(train_loader, val_loader)
-            trainer.train(stop_condition=FinishedAllEpochs())
-        return trainer
 
     @classmethod
     def load(cls, dataset_params: DatasetParams, training_params: TrainParams, determinism: Determinism = None):
