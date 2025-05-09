@@ -66,6 +66,52 @@ class DatasetParams:
         return dumps_inline_lists(self.minimal_dict())
 
 
+def balanced_random_split(dataset, lengths, generator = None):
+    from tqdm import tqdm
+    print("Creating balanced split...")
+    
+    # Group sample indices by class label (slow for large datasets)
+    class_to_indices = dict()
+    for i in tqdm(range(len(dataset))):
+        label = dataset[i][1]
+        if label not in class_to_indices:
+            class_to_indices[label] = []
+        class_to_indices[label].append(i)
+    
+    # If lengths are absolute, convert them to proportions
+    if all(isinstance(x, int) for x in lengths):
+        total_length = sum(lengths)
+        lengths = [x / total_length for x in lengths]
+        
+    # Prepare lists to collect indices for each subset
+    subset_indices = [[] for _ in range(len(lengths))]
+    
+    # Split each subset (class) separately
+    for indices in class_to_indices.values():
+        class_size = len(indices)
+        split_sizes = [int(p * class_size) for p in lengths]
+        remainder = class_size - sum(split_sizes)
+        for i in range(remainder):
+            split_sizes[i % len(lengths)] += 1
+
+        # Shuffle and split manually
+        if generator:
+            shuffled = torch.randperm(class_size, generator=generator).tolist()
+        else:
+            shuffled = torch.randperm(class_size).tolist()
+        class_indices = [indices[i] for i in shuffled]
+
+        cursor = 0
+        for i, size in enumerate(split_sizes):
+            subset_indices[i].extend(class_indices[cursor:cursor + size])
+            cursor += size
+        
+    # Create Subsets from the indices and return them
+    subsets = [torch.utils.data.Subset(dataset, indices) for indices in subset_indices]
+    
+    return subsets
+
+
 def make_datasets(dataset_params: DatasetParams, transform):
     target_types = "category"
     if dataset_params.binary:
@@ -74,20 +120,25 @@ def make_datasets(dataset_params: DatasetParams, transform):
 
     if dataset_params.trainval_size is not None:
         subset_size = dataset_params.trainval_size
-        trainval_dataset = torch.utils.data.Subset(trainval_dataset, range(subset_size))
+    else:
+        subset_size = len(trainval_dataset)
 
     num_workers = 3
 
     # 80% train, 20% val split
     train_set_fraction = 1 - dataset_params.validation_set_fraction
-    num_train = int(train_set_fraction * len(trainval_dataset))
-    num_val = len(trainval_dataset) - num_train
+    num_train = int(train_set_fraction * subset_size)
+    num_val = subset_size - num_train
+    num_discard = len(trainval_dataset) - subset_size
     splitter_generator = torch.Generator().manual_seed(dataset_params.splitting_seed)
-    train_subset, val_subset = random_split(trainval_dataset, [num_train, num_val], generator=splitter_generator)
+    # Note: len(train_subset) might different from num_train when doing balanced split
+    train_subset, val_subset, _ = balanced_random_split(trainval_dataset,
+                                                        [num_train, num_val, num_discard],
+                                                        generator=splitter_generator)
 
     # Unlabelled dataset if present
-    num_labelled = int(dataset_params.labelled_data_fraction * num_train)
-    num_unlabelled = num_train - num_labelled
+    num_labelled = int(dataset_params.labelled_data_fraction * len(train_subset))
+    num_unlabelled = len(train_subset) - num_labelled
     labelled_subset, unlabelled_subset = random_split(train_subset, [num_labelled, num_unlabelled], generator=splitter_generator) 
         
 
