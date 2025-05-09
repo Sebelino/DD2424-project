@@ -136,7 +136,11 @@ class StopCondition(ABC):
 class FinishedAllEpochs(StopCondition):
     def remaining_steps(self, trainer: 'Trainer') -> int:
         max_num_epochs = trainer.params.n_epochs
-        max_total_update_steps = max_num_epochs * (len(trainer.labelled_train_loader) + len(trainer.unlabelled_train_loader))
+        if trainer.unlabelled_train_loader is not None:
+            s = len(trainer.unlabelled_train_loader)
+        else:
+            s = 0
+        max_total_update_steps = max_num_epochs * (len(trainer.labelled_train_loader) + s)
         return max_total_update_steps
 
     def should_stop(self, trainer: 'Trainer') -> bool:
