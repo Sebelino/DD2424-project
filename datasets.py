@@ -90,19 +90,9 @@ def balanced_random_split(dataset, lengths, generator = None):
     for indices in class_to_indices.values():
         class_size = len(indices)
         split_sizes = [int(p * class_size) for p in lengths]
-        
-        # Fix rounding discrepancies
-        diff = sum(class_split_sizes) - class_size
-        while diff != 0:
-            for i in range(num_splits):
-                if diff == 0:
-                    break
-                if diff > 0 and class_split_sizes[i] > 0:
-                    class_split_sizes[i] -= 1
-                    diff -= 1
-                elif diff < 0:
-                    class_split_sizes[i] += 1
-                    diff += 1       
+        remainder = class_size - sum(split_sizes)
+        for i in range(remainder):
+          split_sizes[i % len(lengths)] += 1
         
         # Shuffle and split
         shuffled = torch.randperm(class_size, generator=generator).tolist()
