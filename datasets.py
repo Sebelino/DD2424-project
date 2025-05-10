@@ -67,6 +67,20 @@ class DatasetParams:
 
 
 def balanced_random_split(dataset, lengths, generator = None):
+    """
+    Splits a dataset into non-overlapping subsets, while maintaining the class distribution 
+    in each subset. Class proportions are prioritized, so the split sizes might be slightly 
+    adjusted to maintain these proportions. The final subsets are not shuffled.
+
+    Args:
+        dataset: A dataset, where each item is a tuple of (data, label).
+        lengths: A list specifying the split sizes, either as absolute counts or as fractions 
+                 that sum to 1.
+        generator: An optional `torch.Generator` for reproducibility.
+
+    Returns:
+        A list of `torch.utils.data.Subset` objects, each representing one subset of the dataset.
+    """
     from tqdm import tqdm
     print("Creating balanced split...")
     
