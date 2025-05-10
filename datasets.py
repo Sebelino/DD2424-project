@@ -98,7 +98,7 @@ def balanced_random_split(dataset, lengths, generator = None):
         shuffled = torch.randperm(class_size, generator=generator).tolist()
         class_indices = [indices[i] for i in shuffled]
         cursor = 0
-        for i, size in enumerate(class_split_sizes):
+        for i, size in enumerate(split_sizes):
             split_indices[i].extend(class_indices[cursor:cursor + size])
             cursor += size
         
