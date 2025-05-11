@@ -1,6 +1,5 @@
 import copy
 import hashlib
-import itertools
 import os
 import time
 from abc import ABC, abstractmethod
@@ -9,7 +8,6 @@ from typing import Literal, Tuple, Optional, Any
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
 from torchvision import models
 from torchvision.models import ResNet18_Weights, ResNet34_Weights, ResNet50_Weights
@@ -236,20 +234,16 @@ class Trainer:
 
     @classmethod
     def make_transform(cls, params: TrainParams):
-        if params.data_augmentation is not None and params.data_augmentation == "true":
-            print("performing data augmentation")
-            train_transforms = transforms.Compose([
-                transforms.RandomHorizontalFlip(),  # Random flip with probability 0.5
-                transforms.RandomRotation(15),  # Random rotation within +/-15 degrees
-                transforms.ToTensor()  # Convert to tensor
-                #     transforms.Normalize(
-                #         mean=[0.485, 0.456, 0.406],             # Imagenet mean
-                #         std=[0.229, 0.224, 0.225]               # Imagenet std
-                #     )
-            ])
-            return train_transforms
         weights, _ = cls.arch_dict[params.architecture]
-        return weights.transforms()
+        base_tf = weights.transforms()  # base_tf is a Compose([...Resize, CenterCrop, ToTensor, Normalize...])
+        if params.data_augmentation == "true":
+            print("performing data augmentation")
+            augments = [
+                transforms.RandomHorizontalFlip(),
+                transforms.RandomRotation(15),
+            ]
+            return transforms.Compose(augments + [base_tf])
+        return base_tf
 
     def gpu_acceleration_enabled(self):
         return self.device.type == 'cuda'
