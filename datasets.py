@@ -4,10 +4,18 @@ from typing import Optional, Any
 
 import torch
 import torchvision
+from joblib import Memory
 from torch.utils.data import DataLoader, random_split, Dataset
 
 from determinism import Determinism
 from util import dumps_inline_lists
+
+USE_CACHE = True
+
+if USE_CACHE:
+    memory = Memory("./runs/joblib_cache", verbose=0)
+else:
+    memory = Memory(location=None, verbose=0)
 
 
 def load_dataset(split_name: str, transform, target_types: str = "category"):
@@ -69,7 +77,8 @@ class DatasetParams:
         return dumps_inline_lists(self.minimal_dict())
 
 
-def balanced_random_split(dataset, lengths, generator=None):
+@memory.cache
+def balanced_random_split(dataset, lengths, splitting_seed):
     """
     Splits a dataset into non-overlapping subsets, while maintaining the class distribution 
     in each subset. Class proportions are prioritized, so the split sizes might be slightly 
@@ -79,7 +88,7 @@ def balanced_random_split(dataset, lengths, generator=None):
         dataset: A dataset, where each item is a tuple of (data, label).
         lengths: A list specifying the split sizes, either as absolute counts or as fractions 
                  that sum to 1.
-        generator: An optional `torch.Generator` for reproducibility.
+        splitting_seed: Seed for `torch.Generator` for reproducibility.
 
     Returns:
         A list of `torch.utils.data.Subset` objects, each representing one subset of the dataset.
@@ -87,6 +96,7 @@ def balanced_random_split(dataset, lengths, generator=None):
     from tqdm.auto import tqdm
     print("Creating balanced split...")
 
+    generator = torch.Generator().manual_seed(splitting_seed)
     # Group sample indices by class label (slow for large datasets)
     class_to_indices = dict()
     for i in tqdm(range(len(dataset))):
@@ -147,7 +157,7 @@ def make_datasets(dataset_params: DatasetParams, transform):
     # Note: len(train_subset) might different from num_train when doing balanced split
     train_subset, val_subset, _ = balanced_random_split(trainval_dataset,
                                                         [num_train, num_val, num_discard],
-                                                        generator=splitter_generator)
+                                                        splitting_seed=dataset_params.splitting_seed)
 
     # Unlabelled dataset if present
     num_labelled = int(dataset_params.labelled_data_fraction * len(train_subset))
