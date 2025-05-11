@@ -1,6 +1,6 @@
 import os
 import shutil
-from typing import Dict
+from typing import Dict, Any
 
 from tqdm.auto import tqdm
 
@@ -8,6 +8,19 @@ from datasets import DatasetParams
 from plotting import make_run_comparison_plot, make_run_comparison_ci_plot
 from run import run
 from training import TrainingResult, TrainParams, Trainer
+
+
+def tweak(params: TrainParams, overrides: dict[str, Any]):
+    params = params.copy()
+    for k, v in overrides.items():
+        setattr(params, k, v)
+    overridestr = ", ".join([f"{k}={v}" for k, v in overrides.items()])
+    return overridestr, params
+
+
+def override_param_sets(training_params: TrainParams, overrides_list: list[dict[str, Any]]):
+    param_sets = dict([tweak(training_params, o) for o in overrides_list])
+    return param_sets
 
 
 def evaluate_with_train_val_plot(result: TrainingResult):
@@ -65,6 +78,7 @@ def run_comparison(dataset_params: DatasetParams, param_sets: Dict[str, TrainPar
             run_label = f"Val acc seed={param_set.seed}"
             dct[paramset_label][run_label] = result
     evaluate_runs_ci(dct)
+
 
 def run_dataset_comparison(param_sets: Dict[str, DatasetParams], training_params: TrainParams, trials: int = 1):
     dct = dict()
