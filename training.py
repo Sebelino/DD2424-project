@@ -136,11 +136,9 @@ class FinishedAllEpochs(StopCondition):
     def remaining_steps(self, trainer: 'Trainer') -> int:
         max_num_epochs = trainer.params.n_epochs
         if trainer.unlabelled_train_loader is not None:
-            s = len(trainer.unlabelled_train_loader)
+            return  max_num_epochs * (len(trainer.labelled_train_loader) + len(trainer.unlabelled_train_loader))
         else:
-            s = 0
-        max_total_update_steps = max_num_epochs * (len(trainer.labelled_train_loader) + s)
-        return max_total_update_steps
+            return  max_num_epochs * len(trainer.labelled_train_loader)
 
     def should_stop(self, trainer: 'Trainer') -> bool:
         return trainer.epoch >= trainer.params.n_epochs
@@ -154,7 +152,10 @@ class FinishedEpochs(StopCondition):
     def remaining_steps(self, trainer: 'Trainer') -> int:
         self.epoch_at_start_of_session = trainer.epoch
         remaining_epochs = self.epoch_count - (trainer.epoch - self.epoch_at_start_of_session)
-        return remaining_epochs * (len(trainer.labelled_train_loader) + len(trainer.unlabelled_train_loader))
+        if trainer.unlabelled_train_loader is not None:
+            return remaining_epochs * (len(trainer.labelled_train_loader) + len(trainer.unlabelled_train_loader))
+        else:
+            return remaining_epochs * len(trainer.labelled_train_loader)
 
     def should_stop(self, trainer: 'Trainer') -> bool:
         return trainer.epoch >= self.epoch_at_start_of_session + self.epoch_count
@@ -278,7 +279,7 @@ class Trainer:
         # Recreate optimizer after unfreezing more layers
         self.optimizer = self._make_optimizer(self.params, self.model)
 
-    def maybe_unsupervised_learning(self, model, criterion, running_loss, pb_update_steps):
+    def maybe_semisupervised_learning(self, model, criterion, running_loss, pb_update_steps):
         if self.unlabelled_train_loader is None:
             return running_loss, pb_update_steps
 
@@ -305,13 +306,14 @@ class Trainer:
                     inputs_u, labels_u = x_u[mask], pseudo[mask]
                     self.optimizer.zero_grad()
                     _, unsup_loss = backward_pass(self, inputs_u, labels_u, criterion)
+                    running_loss += unsup_weight * unsup_loss.item()
                     
             else:
                 # train on all pseudo-labels with no threshold
                 self.optimizer.zero_grad()
                 _, unsup_loss = backward_pass(self, x_u, pseudo, criterion)
+                running_loss += unsup_weight * unsup_loss.item()
 
-            running_loss += unsup_weight * unsup_loss.item()
             self.update_step += 1
             if self.verbose:
                 pb_update_steps.update(1)  # Move the progress bar by 1
@@ -394,7 +396,7 @@ class Trainer:
             self.maybe_unfreeze(self.epoch)
 
             # psuedo-labelling
-            running_loss, pb_update_steps = self.maybe_unsupervised_learning(model, criterion, running_loss,
+            running_loss, pb_update_steps = self.maybe_semisupervised_learning(model, criterion, running_loss,
                                                                              pb_update_steps)
 
             for inputs, labels in self.labelled_train_loader:

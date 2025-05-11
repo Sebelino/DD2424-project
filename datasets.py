@@ -162,8 +162,8 @@ def make_datasets(dataset_params: DatasetParams, transform):
     # Unlabelled dataset if present
     num_labelled = int(dataset_params.labelled_data_fraction * len(train_subset))
     num_unlabelled = len(train_subset) - num_labelled
-    labelled_subset, unlabelled_subset = random_split(train_subset, [num_labelled, num_unlabelled],
-                                                      generator=splitter_generator)
+    labelled_subset, unlabelled_subset = balanced_random_split(train_subset, [num_labelled, num_unlabelled],
+                                                      splitting_seed=dataset_params.splitting_seed)
 
     labelled_train_loader = DataLoader(
         labelled_subset,
