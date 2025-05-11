@@ -19,14 +19,17 @@ def load_dataset(split_name: str, transform, target_types: str = "category"):
         transform=transform,
     )
 
+
 # Wrap the “unlabelled” subset so it only returns the image
 class UnlabelledDataset(Dataset):
     def __init__(self, ds):
         self.ds = ds
+
     def __len__(self):
         return len(self.ds)
+
     def __getitem__(self, i):
-        img, *_ = self.ds[i]   # drop all labels
+        img, *_ = self.ds[i]  # drop all labels
         return img
 
 
@@ -66,7 +69,7 @@ class DatasetParams:
         return dumps_inline_lists(self.minimal_dict())
 
 
-def balanced_random_split(dataset, lengths, generator = None):
+def balanced_random_split(dataset, lengths, generator=None):
     """
     Splits a dataset into non-overlapping subsets, while maintaining the class distribution 
     in each subset. Class proportions are prioritized, so the split sizes might be slightly 
@@ -91,15 +94,15 @@ def balanced_random_split(dataset, lengths, generator = None):
         if label not in class_to_indices:
             class_to_indices[label] = []
         class_to_indices[label].append(i)
-    
+
     # If lengths are absolute, convert them to proportions
     if all(isinstance(x, int) for x in lengths):
         total_length = sum(lengths)
         lengths = [x / total_length for x in lengths]
-        
+
     # Prepare lists to collect indices for each subset
     subset_indices = [[] for _ in range(len(lengths))]
-    
+
     # Split each subset (class) separately
     for indices in class_to_indices.values():
         class_size = len(indices)
@@ -107,7 +110,7 @@ def balanced_random_split(dataset, lengths, generator = None):
         remainder = class_size - sum(split_sizes)
         for i in range(remainder):
             split_sizes[i % len(lengths)] += 1
-        
+
         # Shuffle and split
         shuffled = torch.randperm(class_size, generator=generator).tolist()
         class_indices = [indices[i] for i in shuffled]
@@ -115,10 +118,10 @@ def balanced_random_split(dataset, lengths, generator = None):
         for i, size in enumerate(split_sizes):
             subset_indices[i].extend(class_indices[cursor:cursor + size])
             cursor += size
-        
+
     # Create Subsets from the indices and return them
     subsets = [torch.utils.data.Subset(dataset, indices) for indices in subset_indices]
-    
+
     return subsets
 
 
@@ -149,8 +152,8 @@ def make_datasets(dataset_params: DatasetParams, transform):
     # Unlabelled dataset if present
     num_labelled = int(dataset_params.labelled_data_fraction * len(train_subset))
     num_unlabelled = len(train_subset) - num_labelled
-    labelled_subset, unlabelled_subset = random_split(train_subset, [num_labelled, num_unlabelled], generator=splitter_generator) 
-        
+    labelled_subset, unlabelled_subset = random_split(train_subset, [num_labelled, num_unlabelled],
+                                                      generator=splitter_generator)
 
     labelled_train_loader = DataLoader(
         labelled_subset,
@@ -175,7 +178,6 @@ def make_datasets(dataset_params: DatasetParams, transform):
             generator=torch.Generator().manual_seed(dataset_params.shuffler_seed),
             worker_init_fn=Determinism.data_loader_worker_init_fn(dataset_params.shuffler_seed),
         )
-        
 
     val_loader = DataLoader(
         val_subset,
