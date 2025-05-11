@@ -1,5 +1,8 @@
+from typing import Dict
+
 from joblib import Memory
 
+from caching import invalidate_cache_entry
 from datasets import make_datasets, DatasetParams
 from determinism import Determinism
 from training import TrainParams, Trainer, TrainingResult, FinishedAllEpochs
@@ -10,6 +13,28 @@ if USE_CACHE:
     memory = Memory("./runs/joblib_cache", verbose=0)
 else:
     memory = Memory(location=None, verbose=0)
+
+
+def run_multiple(
+        dataset_params: DatasetParams,
+        param_sets: Dict[str, TrainParams],
+        determinism: Determinism,
+        trials: int = 1,
+        invalidate: bool = False
+):
+    dct = dict()
+    for paramset_label, param_set in param_sets.items():
+        param_set = param_set.copy()
+        dct[paramset_label] = dict()
+        for i in range(trials):
+            param_set.seed += 1
+            run_args = (dataset_params, param_set, determinism)
+            invalidate_cache_entry(run, run_args, invalidate=invalidate)
+            print(f"Running trial {i+1}/{trials} for {paramset_label}")
+            result = run(*run_args)
+            run_label = f"Val acc seed={param_set.seed}"
+            dct[paramset_label][run_label] = result
+    return dct
 
 
 def make_trained_trainer(dataset_params: DatasetParams, training_params: TrainParams, determinism: Determinism = None):

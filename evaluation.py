@@ -6,7 +6,7 @@ from tqdm.auto import tqdm
 
 from datasets import DatasetParams
 from plotting import make_run_comparison_plot, make_run_comparison_ci_plot
-from run import run
+from run import run, run_multiple
 from training import TrainingResult, TrainParams, Trainer
 
 
@@ -68,16 +68,8 @@ def run_with_different_seeds(dataset_params: DatasetParams, training_params: Tra
 
 
 def run_comparison(dataset_params: DatasetParams, param_sets: Dict[str, TrainParams], trials: int = 1):
-    dct = dict()
-    for paramset_label, param_set in param_sets.items():
-        param_set = param_set.copy()
-        dct[paramset_label] = dict()
-        for i in range(trials):
-            param_set.seed += 1
-            result = run(dataset_params, param_set)
-            run_label = f"Val acc seed={param_set.seed}"
-            dct[paramset_label][run_label] = result
-    evaluate_runs_ci(dct)
+    results = run_multiple(dataset_params, param_sets, trials)
+    evaluate_runs_ci(results)
 
 
 def run_dataset_comparison(param_sets: Dict[str, DatasetParams], training_params: TrainParams, trials: int = 1):
