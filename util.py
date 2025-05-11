@@ -34,3 +34,12 @@ def dumps_inline_lists(obj: Any, indent: int = 2) -> str:
             return json.dumps(o)
 
     return _format(obj, 0)
+
+
+def suppress_weights_only_warning():
+    import warnings
+    warnings.filterwarnings(
+        "ignore",
+        message=r"You are using `torch\.load` with `weights_only=False`.*",
+        category=FutureWarning
+    )
