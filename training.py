@@ -8,6 +8,7 @@ from typing import Literal, Tuple, Optional, Any
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
 from torchvision import models
 from torchvision.models import ResNet18_Weights, ResNet34_Weights, ResNet50_Weights
@@ -78,7 +79,7 @@ class TrainParams:
     data_augmentation: Optional[Literal["true", "false"]] = None
     # Unsupervised learning params
     unsup_weight: Optional[float] = 0.5
-    pseudo_threshold: Optional[float] = 0.95
+    pseudo_threshold: Optional[float] = None
     # Masked fine-tuning
     masked_finetune: bool = False  # whether to run GPS-style masked fine-tuning
     mask_K: int = 1  # number of weights to update per neuron
@@ -282,7 +283,7 @@ class Trainer:
             return running_loss, pb_update_steps
 
         unsup_weight = self.params.unsup_weight
-        # pseudo_threshold = self.params.pseudo_threshold
+        pseudo_threshold = self.params.pseudo_threshold
         for batch_u in self.unlabelled_train_loader:
             if isinstance(batch_u, (list, tuple)):
                 x_u = batch_u[0]
@@ -293,25 +294,27 @@ class Trainer:
 
             with torch.no_grad():
                 logits_u = model(x_u)
-                pseudo = logits_u.argmax(dim=1)  # take the max-logit class
+                probs_u = F.softmax(logits_u, dim=1)
+                pseudo = probs_u.argmax(dim=1)
+                
+            if pseudo_threshold is not None:
+                confidence, _ = probs_u.max(dim=1)
+                mask = confidence.ge(pseudo_threshold)
 
-            # train on all pseudo-labels
-            self.optimizer.zero_grad()
-            _, unsup_loss = backward_pass(self, x_u, pseudo, criterion)
+                if mask.any():
+                    inputs_u, labels_u = x_u[mask], pseudo[mask]
+                    self.optimizer.zero_grad()
+                    _, unsup_loss = backward_pass(self, inputs_u, labels_u, criterion)
+                    
+            else:
+                # train on all pseudo-labels with no threshold
+                self.optimizer.zero_grad()
+                _, unsup_loss = backward_pass(self, x_u, pseudo, criterion)
+
             running_loss += unsup_weight * unsup_loss.item()
-
             self.update_step += 1
             if self.verbose:
                 pb_update_steps.update(1)  # Move the progress bar by 1
-
-                # probs_u, pseudo = F.softmax(logits_u, dim=1).max(1)
-                # mask = probs_u.ge(pseudo_threshold)
-
-            # if mask.any():
-            #     inputs_u, labels_u = x_u[mask], pseudo[mask]
-            #     self.optimizer.zero_grad()
-            #     _, unsup_loss = backward_pass(self, inputs_u, labels_u, criterion)
-            #     running_loss += unsup_weight * unsup_loss.item()
 
         return running_loss, pb_update_steps
 
