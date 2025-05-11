@@ -280,21 +280,21 @@ class Trainer:
     def maybe_unsupervised_learning(self, model, criterion, running_loss, pb_update_steps):
         if self.unlabelled_train_loader is None:
             return running_loss, pb_update_steps
-            
+
         unsup_weight = self.params.unsup_weight
-        #pseudo_threshold = self.params.pseudo_threshold
+        # pseudo_threshold = self.params.pseudo_threshold
         for batch_u in self.unlabelled_train_loader:
             if isinstance(batch_u, (list, tuple)):
                 x_u = batch_u[0]
             else:
                 x_u = batch_u
-                
+
             x_u = x_u.to(self.device)
-            
+
             with torch.no_grad():
                 logits_u = model(x_u)
                 pseudo = logits_u.argmax(dim=1)  # take the max-logit class
-            
+
             # train on all pseudo-labels
             self.optimizer.zero_grad()
             _, unsup_loss = backward_pass(self, x_u, pseudo, criterion)
@@ -303,10 +303,10 @@ class Trainer:
             self.update_step += 1
             if self.verbose:
                 pb_update_steps.update(1)  # Move the progress bar by 1
-                
-                #probs_u, pseudo = F.softmax(logits_u, dim=1).max(1)
-                #mask = probs_u.ge(pseudo_threshold)
-    
+
+                # probs_u, pseudo = F.softmax(logits_u, dim=1).max(1)
+                # mask = probs_u.ge(pseudo_threshold)
+
             # if mask.any():
             #     inputs_u, labels_u = x_u[mask], pseudo[mask]
             #     self.optimizer.zero_grad()
@@ -314,7 +314,6 @@ class Trainer:
             #     running_loss += unsup_weight * unsup_loss.item()
 
         return running_loss, pb_update_steps
-                
 
     def should_record_metrics(self) -> bool:
         if self.params.validation_freq == 1:
@@ -392,7 +391,8 @@ class Trainer:
             self.maybe_unfreeze(self.epoch)
 
             # psuedo-labelling
-            running_loss, pb_update_steps = self.maybe_unsupervised_learning(model, criterion, running_loss, pb_update_steps)
+            running_loss, pb_update_steps = self.maybe_unsupervised_learning(model, criterion, running_loss,
+                                                                             pb_update_steps)
 
             for inputs, labels in self.labelled_train_loader:
                 if self.verbose:
