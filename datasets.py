@@ -84,9 +84,9 @@ def balanced_random_split(dataset, lengths, generator=None):
     Returns:
         A list of `torch.utils.data.Subset` objects, each representing one subset of the dataset.
     """
-    from tqdm import tqdm
+    from tqdm.auto import tqdm
     print("Creating balanced split...")
-    
+
     # Group sample indices by class label (slow for large datasets)
     class_to_indices = dict()
     for i in tqdm(range(len(dataset))):
