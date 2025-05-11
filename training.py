@@ -10,11 +10,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torchvision import models
-from torchvision.models import ResNet18_Weights, ResNet34_Weights, ResNet50_Weights
-from torchvision.transforms import transforms
 from tqdm.auto import tqdm
 
+import augmentation
+from augmentation import make_augmented_transform
 from datasets import DatasetParams
 from determinism import Determinism
 from util import dumps_inline_lists
@@ -136,9 +135,9 @@ class FinishedAllEpochs(StopCondition):
     def remaining_steps(self, trainer: 'Trainer') -> int:
         max_num_epochs = trainer.params.n_epochs
         if trainer.unlabelled_train_loader is not None:
-            return  max_num_epochs * (len(trainer.labelled_train_loader) + len(trainer.unlabelled_train_loader))
+            return max_num_epochs * (len(trainer.labelled_train_loader) + len(trainer.unlabelled_train_loader))
         else:
-            return  max_num_epochs * len(trainer.labelled_train_loader)
+            return max_num_epochs * len(trainer.labelled_train_loader)
 
     def should_stop(self, trainer: 'Trainer') -> bool:
         return trainer.epoch >= trainer.params.n_epochs
@@ -163,11 +162,6 @@ class FinishedEpochs(StopCondition):
 
 class Trainer:
     num_classes = 37
-    arch_dict = dict(
-        resnet18=(ResNet18_Weights.DEFAULT, models.resnet18),
-        resnet34=(ResNet34_Weights.DEFAULT, models.resnet34),
-        resnet50=(ResNet50_Weights.DEFAULT, models.resnet50),
-    )
 
     def __init__(self, params: TrainParams, determinism: Determinism = None, verbose=True):
         if determinism is not None:
@@ -176,7 +170,8 @@ class Trainer:
         self.determinism = determinism
         self.verbose = verbose
         self.device = self._make_device()
-        self.transform = self.make_transform(params)
+        self.base_transform = self.make_base_transform(params)
+        self.training_transform = self.make_training_transform(params)
         self.model = self._make_model(params, self.device)
         self.optimizer = self._make_optimizer(params, self.model)
         self.epoch_to_unfreezing = self._make_unfreezings(params, self.model)
@@ -195,7 +190,7 @@ class Trainer:
 
     @classmethod
     def _make_model(cls, params: TrainParams, device):
-        weights, model_fn = Trainer.arch_dict[params.architecture]
+        weights, model_fn = augmentation.arch_dict[params.architecture]
         model = model_fn(weights=weights)
 
         if params.freeze_layers:
@@ -235,17 +230,17 @@ class Trainer:
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     @classmethod
-    def make_transform(cls, params: TrainParams):
-        weights, _ = cls.arch_dict[params.architecture]
-        base_tf = weights.transforms()  # base_tf is a Compose([...Resize, CenterCrop, ToTensor, Normalize...])
-        if params.data_augmentation == "true":
-            print("performing data augmentation")
-            augments = [
-                transforms.RandomHorizontalFlip(),
-                transforms.RandomRotation(15),
-            ]
-            return transforms.Compose(augments + [base_tf])
-        return base_tf
+    def make_base_transform(cls, params: TrainParams):
+        """ Should be applied to validation set and test set """
+        return augmentation.make_base_transform(params.architecture)
+
+    @classmethod
+    def make_training_transform(cls, params: TrainParams):
+        """ Should be applied to training set only """
+        base_tf = cls.make_base_transform(params)
+        if params.data_augmentation != "true":
+            return base_tf
+        return make_augmented_transform(base_tf)
 
     def gpu_acceleration_enabled(self):
         return self.device.type == 'cuda'
@@ -297,7 +292,7 @@ class Trainer:
                 logits_u = model(x_u)
                 probs_u = F.softmax(logits_u, dim=1)
                 pseudo = probs_u.argmax(dim=1)
-                
+
             if pseudo_threshold is not None:
                 confidence, _ = probs_u.max(dim=1)
                 mask = confidence.ge(pseudo_threshold)
@@ -307,7 +302,7 @@ class Trainer:
                     self.optimizer.zero_grad()
                     _, unsup_loss = backward_pass(self, inputs_u, labels_u, criterion)
                     running_loss += unsup_weight * unsup_loss.item()
-                    
+
             else:
                 # train on all pseudo-labels with no threshold
                 self.optimizer.zero_grad()
@@ -397,7 +392,7 @@ class Trainer:
 
             # psuedo-labelling
             running_loss, pb_update_steps = self.maybe_semisupervised_learning(model, criterion, running_loss,
-                                                                             pb_update_steps)
+                                                                               pb_update_steps)
 
             for inputs, labels in self.labelled_train_loader:
                 if self.verbose:

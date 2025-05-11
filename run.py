@@ -30,7 +30,7 @@ def run_multiple(
             param_set.seed += 1
             run_args = (dataset_params, param_set, determinism)
             invalidate_cache_entry(run, run_args, invalidate=invalidate)
-            print(f"Running trial {i+1}/{trials} for {paramset_label}")
+            print(f"Running trial {i + 1}/{trials} for {paramset_label}")
             result = run(*run_args)
             run_label = f"Val acc seed={param_set.seed}"
             dct[paramset_label][run_label] = result
@@ -39,7 +39,11 @@ def run_multiple(
 
 def make_trained_trainer(dataset_params: DatasetParams, training_params: TrainParams, determinism: Determinism = None):
     trainer = Trainer(training_params, determinism)
-    labelled_train_loader, unlabelled_train_loader, val_loader = make_datasets(dataset_params, trainer.transform)
+    labelled_train_loader, unlabelled_train_loader, val_loader = make_datasets(
+        dataset_params,
+        trainer.base_transform,
+        trainer.training_transform
+    )
     trainer.load_dataset(labelled_train_loader, unlabelled_train_loader, val_loader)
     result = trainer.train(stop_condition=FinishedAllEpochs())
     return trainer, result
