@@ -85,7 +85,7 @@ class DatasetParams:
         return dumps_inline_lists(self.minimal_dict())
 
 
-#@memory.cache
+@memory.cache
 def balanced_random_split_indices(dataset, lengths, splitting_seed, class_fractions):
     """
     Splits a dataset into non-overlapping subsets while preserving
