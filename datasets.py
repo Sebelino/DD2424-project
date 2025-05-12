@@ -96,7 +96,7 @@ def balanced_random_split(dataset, lengths, splitting_seed, class_fractions):
     
     Args:
         dataset: A dataset, where each item is a tuple of (data, label).
-        lengths: A list specifying the split sizes, either as absolute counts or as fractions
+        lengths: A tuple specifying the split sizes, either as absolute counts or as fractions
                  that sum to 1.
         splitting_seed: Seed for `torch.Generator` for reproducibility.
         class_fractions: A tuple of floats, each between 0.0 and 1.0, representing
@@ -111,7 +111,7 @@ def balanced_random_split(dataset, lengths, splitting_seed, class_fractions):
     return subsets
 
 
-#@memory.cache
+@memory.cache
 def balanced_random_split_indices(dataset, lengths, splitting_seed, class_fractions):
     print("Creating balanced split...")
     from tqdm.auto import tqdm
@@ -173,7 +173,7 @@ def make_datasets(dataset_params: DatasetParams, base_transform, training_transf
     # Note: len(train_subset) might different from num_train when doing balanced split
     train_subset_indices, val_subset_indices, _ = balanced_random_split_indices(
         base_trainval_dataset,
-        [num_train, num_val, num_discard],
+        (num_train, num_val, num_discard),
         splitting_seed=dataset_params.splitting_seed,
         class_fractions=dataset_params.class_fractions
     )
@@ -185,7 +185,7 @@ def make_datasets(dataset_params: DatasetParams, base_transform, training_transf
     num_unlabelled = len(train_subset) - num_labelled
     labelled_subset, unlabelled_subset = balanced_random_split(
         train_subset,
-        [num_labelled, num_unlabelled],
+        (num_labelled, num_unlabelled),
         splitting_seed=dataset_params.splitting_seed,
         class_fractions=dataset_params.class_fractions
     )
