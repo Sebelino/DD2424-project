@@ -85,34 +85,30 @@ class DatasetParams:
         return dumps_inline_lists(self.minimal_dict())
 
 
-def balanced_random_split(dataset, lengths, splitting_seed, class_fractions):
-    """
-    Splits a dataset into non-overlapping subsets, while maintaining the class distribution
-    in each subset. Class proportions are prioritized, so the split sizes might be slightly
-    adjusted to maintain these proportions. The final subsets are not shuffled. Additionally,
-    you can specify the fraction of samples to use from each class to create an "imbalanced"
-    dataset. This allows you to adjust the representation of each class in the dataset, with
-    values between 0.0 (excluding the class) and 1.0 (using all samples of the class).
-    
-    Args:
-        dataset: A dataset, where each item is a tuple of (data, label).
-        lengths: A tuple specifying the split sizes, either as absolute counts or as fractions
-                 that sum to 1.
-        splitting_seed: Seed for `torch.Generator` for reproducibility.
-        class_fractions: A tuple of floats, each between 0.0 and 1.0, representing
-                         the fraction of samples to use from each class.
-
-    Returns:
-        A list of `torch.utils.data.Subset` objects, each representing one subset of the dataset.
-    """
-    subset_indices = balanced_random_split_indices(dataset, lengths, splitting_seed, class_fractions)
-    # Create Subsets from the indices and return them
-    subsets = [torch.utils.data.Subset(dataset, indices) for indices in subset_indices]
-    return subsets
-
-
 @memory.cache
 def balanced_random_split_indices(dataset, lengths, splitting_seed, class_fractions):
+    """
+    Splits a dataset into non-overlapping subsets while preserving
+    class distributions.  The split prioritizes class proportions, and
+    the subset sizes may be adjusted slightly to maintain these
+    proportions. The subsets are not shuffled after the
+    split. Optionally, you can control the fraction of samples to use
+    from each class to create an imbalanced dataset by specifying
+    `class_fractions`, where values range from 0.0 (exclude the class)
+    to 1.0 (use all samples).
+
+    Args:
+        dataset: Dataset, where each item is a tuple (data, label).
+        lengths: Tuple of split sizes, either as absolute counts or
+                 fractions summing to 1.
+        splitting_seed: Seed for reproducibility.
+        class_fractions: Tuple of floats (0.0-1.0) specifying the fraction
+                         of samples to include from each class.
+
+    Returns:
+        A list of lists, where each list contains the indices of samples
+        for each subset.
+    """
     print("Creating balanced split...")
     from tqdm.auto import tqdm
 
@@ -158,22 +154,18 @@ def make_datasets(dataset_params: DatasetParams, base_transform, training_transf
     augmented_trainval_dataset = load_dataset("trainval", training_transform, target_types)
 
     if dataset_params.trainval_size is not None:
-        subset_size = dataset_params.trainval_size
+        subset_fraction = dataset_params.trainval_size/len(base_trainval_dataset)
     else:
-        subset_size = len(base_trainval_dataset)
+        subset_fraction = 1.0
 
     num_workers = 3
 
     # 80% train, 20% val split
-    train_set_fraction = 1 - dataset_params.validation_set_fraction
-    num_train = int(train_set_fraction * subset_size)
-    num_val = subset_size - num_train
-    num_discard = len(base_trainval_dataset) - subset_size
-    splitter_generator = torch.Generator().manual_seed(dataset_params.splitting_seed)
-    # Note: len(train_subset) might different from num_train when doing balanced split
-    train_subset_indices, val_subset_indices, _ = balanced_random_split_indices(
+    validation_set_fraction = subset_fraction * dataset_params.validation_set_fraction
+    train_set_fraction = subset_fraction * (1 - validation_set_fraction)
+    train_subset_indices, val_subset_indices = balanced_random_split_indices(
         base_trainval_dataset,
-        (num_train, num_val, num_discard),
+        (train_set_fraction, validation_set_fraction),
         splitting_seed=dataset_params.splitting_seed,
         class_fractions=dataset_params.class_fractions
     )
@@ -181,14 +173,16 @@ def make_datasets(dataset_params: DatasetParams, base_transform, training_transf
     val_subset = torch.utils.data.Subset(base_trainval_dataset, val_subset_indices)
 
     # Unlabelled dataset if present
-    num_labelled = int(dataset_params.labelled_data_fraction * len(train_subset))
-    num_unlabelled = len(train_subset) - num_labelled
-    labelled_subset, unlabelled_subset = balanced_random_split(
+    labelled_data_fraction = dataset_params.labelled_data_fraction
+    unlabelled_data_fraction = 1 - labelled_data_fraction
+    labelled_subset_indices, unlabelled_subset_indices = balanced_random_split_indices(
         train_subset,
-        (num_labelled, num_unlabelled),
+        (labelled_data_fraction, unlabelled_data_fraction),
         splitting_seed=dataset_params.splitting_seed,
         class_fractions=dataset_params.class_fractions
     )
+    labelled_subset = torch.utils.data.Subset(train_subset, labelled_subset_indices)
+    unlabelled_subset = torch.utils.data.Subset(train_subset, unlabelled_subset_indices)
 
     labelled_train_loader = DataLoader(
         labelled_subset,
