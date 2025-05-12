@@ -26,13 +26,13 @@ def run_multiple(
         param_set = param_set.copy()
         dct[paramset_label] = dict()
         for i in range(trials):
-            param_set.seed += 1
             run_args = (dataset_params, param_set, determinism)
             invalidate_cache_entry(run, run_args, invalidate=invalidate)
             print(f"Running trial {i + 1}/{trials} for {paramset_label}")
             result = run(*run_args)
             run_label = f"Val acc seed={param_set.seed}"
             dct[paramset_label][run_label] = result
+            param_set.seed += 1
     return dct
 
 
