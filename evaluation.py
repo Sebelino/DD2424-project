@@ -1,20 +1,43 @@
 import os
 import shutil
+from dataclasses import asdict
 from typing import Dict, Any
 
 from tqdm.auto import tqdm
 
+from augmentation import AugmentationParams
 from datasets import DatasetParams
 from plotting import make_run_comparison_plot, make_run_comparison_ci_plot
 from run import run, run_multiple
 from training import TrainingResult, TrainParams, Trainer
 
 
+def make_paramset_string(params: dict) -> str:
+    parts = []
+
+    def _flatten(d, prefix=""):
+        for key in sorted(d):
+            val = d[key]
+            full_key = f"{prefix}.{key}" if prefix else key
+            if isinstance(val, dict):
+                _flatten(val, full_key)
+            else:
+                parts.append(f"{full_key}={val}")
+
+    _flatten(params)
+    return ",".join(parts)
+
+
 def tweak(params: TrainParams, overrides: dict[str, Any]):
     params = params.copy()
     for k, v in overrides.items():
+        if isinstance(v, dict):
+            if k == "augmentation":
+                v = AugmentationParams(**{**asdict(params.augmentation), **v})
+            else:
+                raise NotImplementedError
         setattr(params, k, v)
-    overridestr = ", ".join([f"{k}={v}" for k, v in overrides.items()])
+    overridestr = make_paramset_string(overrides)
     return overridestr, params
 
 

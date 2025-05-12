@@ -14,7 +14,6 @@ if USE_CACHE:
 else:
     memory = Memory(location=None, verbose=0)
 
-
 def run_multiple(
         dataset_params: DatasetParams,
         param_sets: Dict[str, TrainParams],

@@ -13,7 +13,6 @@ import torch.optim as optim
 from tqdm.auto import tqdm
 
 import augmentation
-from augmentation import make_augmented_transform
 from datasets import DatasetParams
 from determinism import Determinism
 from util import dumps_inline_lists
@@ -72,10 +71,10 @@ class TrainParams:
     time_limit_seconds: Optional[int]
     # Stop training if this validation accuracy is exceeded during training
     val_acc_target: Optional[float]
+    # Data augmentation
+    augmentation: augmentation.AugmentationParams
     # Finetune l layers simultaneously
     unfreeze_last_l_blocks: Optional[int] = None
-    # data augmentation
-    data_augmentation: Optional[Literal["true", "false"]] = None
     # Unsupervised learning params
     unsup_weight: Optional[float] = 0.5
     pseudo_threshold: Optional[float] = None
@@ -95,6 +94,8 @@ class TrainParams:
             if isinstance(obj, (list, tuple)):
                 pruned = [prune(val) for val in obj if val is not None]
                 return type(obj)(pruned)
+            if augmentation.is_transform(obj):
+                return augmentation.serialize(obj)
             return obj
 
         return prune(asdict(self))
@@ -238,9 +239,9 @@ class Trainer:
     def make_training_transform(cls, params: TrainParams):
         """ Should be applied to training set only """
         base_tf = cls.make_base_transform(params)
-        if params.data_augmentation != "true":
+        if not params.augmentation.enabled:
             return base_tf
-        return make_augmented_transform(base_tf)
+        return params.augmentation.transform
 
     def gpu_acceleration_enabled(self):
         return self.device.type == 'cuda'

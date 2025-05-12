@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from typing import Literal
 
 from torchvision import transforms, models
@@ -11,32 +12,66 @@ arch_dict = dict(
 )
 
 
+@dataclass
+class AugmentationParams:
+    enabled: bool
+    transform: transforms.Compose
+
+    def __reduce__(self):  # For pickle
+        return (AugmentationParams, (self.enabled, self.transform))
+
+
 def make_base_transform(architecture: Literal["resnet18", "resnet34", "resnet50"]):
     weights, _ = arch_dict[architecture]
     return weights.transforms()
 
 
-def make_augmented_transform(base_tf):
-    print("Performing data augmentation")
-    return transforms.Compose([
-        # 1) RandomResizedCrop *replaces* Resize→CenterCrop
-        transforms.RandomResizedCrop(
+def to_transform(architecture: Literal["resnet18", "resnet34", "resnet50"], aug_list: list[str]):
+    base_tf = make_base_transform(architecture)
+    augmentations = dict(
+        resize=transforms.RandomResizedCrop(
             size=base_tf.crop_size,
             scale=(0.8, 1.0),
             ratio=(3 / 4, 4 / 3),
-            #interpolation=base_tf.interpolation,
             interpolation=InterpolationMode.BILINEAR,
         ),
-        # 2) your extra augs
-        transforms.RandomHorizontalFlip(p=0.5),
-        transforms.RandomRotation(
+        flip=transforms.RandomHorizontalFlip(p=0.5),
+        rotate=transforms.RandomRotation(
             degrees=15,
             expand=False,
             fill=tuple(int(255 * m) for m in base_tf.mean)  # fill with ImageNet mean
         ),
-        transforms.ColorJitter(0.2, 0.2, 0.2, 0.1),
-        transforms.RandomGrayscale(p=0.1),
-        # 3) final tensor + normalize
+        colorjitter=transforms.ColorJitter(0.2, 0.2, 0.2, 0.1),
+        grayscale=transforms.RandomGrayscale(p=0.1),
+    )
+    compose_list = []
+    for aug_str in aug_list:
+        operation = augmentations[aug_str]
+        compose_list.append(operation)
+    compose_list.extend([
+        transforms.ToTensor(),
+        transforms.Normalize(base_tf.mean, base_tf.std),
+    ])
+    return transforms.Compose(compose_list)
+
+
+def make_augmented_transform(base_tf):
+    return transforms.Compose([
+        transforms.RandomResizedCrop(
+            size=base_tf.crop_size,
+            scale=(0.8, 1.0),
+            ratio=(3 / 4, 4 / 3),
+            # interpolation=base_tf.interpolation,
+            interpolation=InterpolationMode.BILINEAR,
+        ),
+        # transforms.RandomHorizontalFlip(p=0.5),
+        # transforms.RandomRotation(
+        #    degrees=15,
+        #    expand=False,
+        #    fill=tuple(int(255 * m) for m in base_tf.mean)  # fill with ImageNet mean
+        # ),
+        # transforms.ColorJitter(0.2, 0.2, 0.2, 0.1),
+        # transforms.RandomGrayscale(p=0.1),
         transforms.ToTensor(),
         transforms.Normalize(base_tf.mean, base_tf.std),
     ])
@@ -55,3 +90,25 @@ def make_visualizable(tf, base_tf):
         inv_norm,
         transforms.ToPILImage(),
     ])
+
+
+def is_transform(obj):
+    return isinstance(obj, transforms.Compose)
+
+
+def serialize(obj: transforms.Compose) -> str:
+    s = repr(obj)
+    # s = s.replace("\n", " ")  # Improves printout. Generally error-prone but should be fine in our case.
+    return s
+
+
+def deserialize(s: str) -> transforms.Compose:
+    safe_ns = {
+        'Compose': transforms.Compose,
+        'Resize': transforms.Resize,
+        'CenterCrop': transforms.CenterCrop,
+        'ToTensor': transforms.ToTensor,
+        'BILINEAR': transforms.InterpolationMode.BILINEAR,
+    }
+    obj = eval(s, safe_ns)  # Unsafe but pragmatic
+    return obj
