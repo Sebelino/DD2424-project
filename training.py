@@ -165,7 +165,7 @@ class Trainer:
 
     def __init__(self, params: TrainParams, determinism: Determinism = None, verbose=True):
         if determinism is not None:
-            determinism.sow()  # If you want consecutive trainings to yield identical results, you need to make sure to do this
+            determinism.sow(params.seed)  # If you want consecutive trainings to yield identical results, you need to make sure to do this
         params = params.copy()
         self.determinism = determinism
         self.verbose = verbose

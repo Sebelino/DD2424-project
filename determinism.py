@@ -7,14 +7,15 @@ import numpy as np
 class Determinism:
     seed: int = 0
 
-    def sow(self):
+    def sow(self, seed=None):
+        if seed is None:
+            seed = self.seed
         import os
         # Must come before any torch imports
         os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
         import torch
         import random
         import numpy as np
-        seed = self.seed
         random.seed(seed)
         np.random.seed(seed)
         torch.manual_seed(seed)
