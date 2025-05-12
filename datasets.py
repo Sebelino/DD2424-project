@@ -85,7 +85,7 @@ class DatasetParams:
         return dumps_inline_lists(self.minimal_dict())
 
 
-@memory.cache
+#@memory.cache
 def balanced_random_split_indices(dataset, lengths, splitting_seed, class_fractions):
     """
     Splits a dataset into non-overlapping subsets while preserving
@@ -99,8 +99,8 @@ def balanced_random_split_indices(dataset, lengths, splitting_seed, class_fracti
 
     Args:
         dataset: Dataset, where each item is a tuple (data, label).
-        lengths: Tuple of split sizes, either as absolute counts or
-                 fractions summing to 1.
+        lengths: Tuple of floats (0.0-1.0) representing the fraction
+                 of the full dataset that should go into each subset.
         splitting_seed: Seed for reproducibility.
         class_fractions: Tuple of floats (0.0-1.0) specifying the fraction
                          of samples to include from each class.
@@ -108,11 +108,19 @@ def balanced_random_split_indices(dataset, lengths, splitting_seed, class_fracti
     Returns:
         A list of lists, where each list contains the indices of samples
         for each subset.
-    """
+    """  
+    assert 0 <= sum(lengths) <= 1.0, (
+        "Sum of split proportions in 'lengths' must be between 0 and 1"
+    )
+    
+    assert all(
+        0.0 <= f <= 1.0 for f in class_fractions
+    ), "All class fractions must be between 0 and 1"
+    
     print("Creating balanced split...")
+    
     from tqdm.auto import tqdm
-
-    generator = torch.Generator().manual_seed(splitting_seed)
+    
     # Group sample indices by class label (slow for large datasets)
     class_to_indices = dict()
     for i in tqdm(range(len(dataset))):
@@ -120,24 +128,19 @@ def balanced_random_split_indices(dataset, lengths, splitting_seed, class_fracti
         if label not in class_to_indices:
             class_to_indices[label] = []
         class_to_indices[label].append(i)
-
-    # If lengths are absolute, convert them to proportions
-    if all(isinstance(x, int) for x in lengths):
-        total_length = sum(lengths)
-        lengths = [x / total_length for x in lengths]
+        
+    generator = torch.Generator().manual_seed(splitting_seed)
 
     # Prepare lists to collect indices for each subset
     subset_indices = [[] for _ in range(len(lengths))]
 
     # Split each subset (class) separately
     for label, indices in class_to_indices.items():
-        num_samples = int(len(indices) * class_fractions[label])
-        
+        num_samples = int(len(indices) * class_fractions[label])      
         split_sizes = [int(p * num_samples) for p in lengths]
         remainder = num_samples - sum(split_sizes)
         for i in range(remainder):
             split_sizes[i % len(lengths)] += 1
-
         # Shuffle and split
         shuffled = torch.randperm(len(indices), generator=generator).tolist()
         class_indices = [indices[i] for i in shuffled[:num_samples]]
@@ -145,6 +148,7 @@ def balanced_random_split_indices(dataset, lengths, splitting_seed, class_fracti
         for i, size in enumerate(split_sizes):
             subset_indices[i].extend(class_indices[cursor:cursor + size])
             cursor += size
+            
     return subset_indices
 
 
