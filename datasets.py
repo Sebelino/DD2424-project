@@ -52,7 +52,8 @@ class DatasetParams:
     validation_set_fraction: float
     # Size of training + validation set. None means "all".
     trainval_size: Optional[int] = None
-    binary: Optional[bool] = False
+    # Either "category" (default), "binary-category" (cat/dog), or a tuple with both
+    target_types: Optional[str] = "category"
     labelled_data_fraction: Optional[float] = 1.0
 
     def copy(self) -> 'DatasetParams':
@@ -139,9 +140,7 @@ def balanced_random_split_indices(dataset, lengths, splitting_seed):
 
 
 def make_datasets(dataset_params: DatasetParams, base_transform, training_transform):
-    target_types = "category"
-    if dataset_params.binary:
-        target_types = "binary-category"
+    target_types = dataset_params.target_types
     base_trainval_dataset = load_dataset("trainval", base_transform, target_types)
     augmented_trainval_dataset = load_dataset("trainval", training_transform, target_types)
 
