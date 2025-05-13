@@ -8,7 +8,7 @@ from tqdm.auto import tqdm
 
 from augmentation import AugmentationParams
 from datasets import DatasetParams
-from plotting import make_run_comparison_plot, make_run_comparison_ci_plot
+from plotting import make_run_comparison_plot, make_run_comparison_ci_plot, shorten_label
 from run import run, run_multiple
 from training import TrainingResult, TrainParams, Trainer
 
@@ -70,7 +70,12 @@ def evaluate_runs_print(results_per_paramset: Dict[str, Dict[str, TrainingResult
         val_accs = {l: r.validation_accuracies for l, r in paramset_result.items()}
         arr = np.array(list(val_accs.values()))
         mean_val_accs = arr.mean(axis=0)
-        print(f"Mean final val acc: {100 * mean_val_accs[-1]:.2f} % for {label}")
+        print(f"Final mean val acc: {100 * mean_val_accs[-1]:.2f} % for {shorten_label(label)}")
+    for label, paramset_result in results_per_paramset.items():
+        val_accs = {l: r.validation_accuracies for l, r in paramset_result.items()}
+        arr = np.array(list(val_accs.values()))
+        mean_val_accs = arr.mean(axis=0)
+        print(f"Max   mean val acc: {100 * max(mean_val_accs):.2f} % for {shorten_label(label)}")
 
 
 def evaluate_runs_ci(results_per_paramset: Dict[str, Dict[str, TrainingResult]]):
