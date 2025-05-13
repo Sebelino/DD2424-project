@@ -3,6 +3,7 @@ import shutil
 from dataclasses import asdict
 from typing import Dict, Any
 
+import numpy as np
 from tqdm.auto import tqdm
 
 from augmentation import AugmentationParams
@@ -62,6 +63,14 @@ def evaluate_runs(results: Dict[str, TrainingResult]):
             raise ValueError(
                 f"The runs are not comparable because the number of points differ: {len(epochs)} vs. {result.epochs}")
     make_run_comparison_plot(epochs, accuracies_dict)
+
+
+def evaluate_runs_print(results_per_paramset: Dict[str, Dict[str, TrainingResult]]):
+    for label, paramset_result in results_per_paramset.items():
+        val_accs = {l: r.validation_accuracies for l, r in paramset_result.items()}
+        arr = np.array(list(val_accs.values()))
+        mean_val_accs = arr.mean(axis=0)
+        print(f"Mean final val acc: {100 * mean_val_accs[-1]:.2f} % for {label}")
 
 
 def evaluate_runs_ci(results_per_paramset: Dict[str, Dict[str, TrainingResult]]):
