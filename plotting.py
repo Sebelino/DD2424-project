@@ -7,7 +7,7 @@ def make_run_comparison_plot(epochs, accuracies_dict):
         ax.plot(epochs, accuracies, label=f'{label} Accuracy')
 
     ax.set_xlabel('Epoch')
-    ax.set_ylabel('Accuracy (%)')
+    ax.set_ylabel('Accuracy')
     ax.set_title('Accuracy comparison')
     ax.legend()
     ax.grid(True)
@@ -54,7 +54,7 @@ def make_run_comparison_ci_plot(
             )
 
     ax_train.set_xlabel('Update step')
-    ax_train.set_ylabel('Accuracy (%)')
+    ax_train.set_ylabel('Accuracy')
     ax_train.set_title('Training Accuracy')
     ax_train.legend()
     ax_train.grid(True)
