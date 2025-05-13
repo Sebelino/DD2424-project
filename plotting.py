@@ -55,7 +55,9 @@ def make_run_comparison_ci_plot(
 
     ax_train.set_xlabel('Update step')
     ax_train.set_ylabel('Accuracy')
-    ax_train.set_ylim(0.9, 1.0)
+    min_final_train_acc = min([vs[-1] for _, samples in train_accuracies_dict.items() for vs in samples.values()])
+    if min_final_train_acc > 0.9:
+        ax_train.set_ylim(0.9, 1.0) # Zoom in to 90 - 100 % area
     ax_train.set_title('Training Accuracy')
     ax_train.legend()
     ax_train.grid(True)
@@ -78,7 +80,9 @@ def make_run_comparison_ci_plot(
             )
 
     ax_val.set_xlabel('Update step')
-    ax_val.set_ylim(0.9, 1.0)
+    min_final_val_acc = min([vs[-1] for _, samples in val_accuracies_dict.items() for vs in samples.values()])
+    if min_final_val_acc > 0.9:
+        ax_val.set_ylim(0.9, 1.0) # Zoom in to 90 - 100 % area
     ax_val.set_title('Validation Accuracy')
     ax_val.legend()
     ax_val.grid(True)
