@@ -10,7 +10,7 @@ from augmentation import AugmentationParams
 from datasets import DatasetParams
 from plotting import make_run_comparison_plot, make_run_comparison_ci_plot, shorten_label
 from run import run, run_multiple
-from training import TrainingResult, TrainParams, Trainer
+from training import TrainingResult, TrainParams, Trainer, NagParams
 
 
 def make_paramset_string(params: dict) -> str:
@@ -35,6 +35,8 @@ def tweak(params: TrainParams, overrides: dict[str, Any]):
         if isinstance(v, dict):
             if k == "augmentation":
                 v = AugmentationParams(**{**asdict(params.augmentation), **v})
+            elif k == "optimizer" and params.optimizer.name == "nag":
+                v = NagParams(**{**asdict(params.optimizer), **v})
             else:
                 raise NotImplementedError
         setattr(params, k, v)
