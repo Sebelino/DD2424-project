@@ -55,6 +55,7 @@ def make_run_comparison_ci_plot(
 
     ax_train.set_xlabel('Update step')
     ax_train.set_ylabel('Accuracy')
+    ax_train.set_ylim(0.9, 1.0)
     ax_train.set_title('Training Accuracy')
     ax_train.legend()
     ax_train.grid(True)
@@ -77,6 +78,7 @@ def make_run_comparison_ci_plot(
             )
 
     ax_val.set_xlabel('Update step')
+    ax_val.set_ylim(0.9, 1.0)
     ax_val.set_title('Validation Accuracy')
     ax_val.legend()
     ax_val.grid(True)
