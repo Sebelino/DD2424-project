@@ -121,6 +121,30 @@ def run_dataset_comparison(param_sets: Dict[str, DatasetParams], training_params
     evaluate_runs_ci(dct)
 
 
+def evaluate_predictions(trainer: Trainer, test_loader, test_dataset):
+    import torch
+    predicted_labels = []
+    true_labels = []
+    image_paths = []
+
+    trainer.model.eval()
+
+    with torch.no_grad():
+        for idx, (inputs, labels) in enumerate(tqdm(test_loader, desc="Evaluating")):
+            inputs, labels = inputs.to(trainer.device), labels.to(trainer.device)
+            outputs = trainer.model(inputs)
+            _, predicted = torch.max(outputs.data, 1)
+
+            for i in range(inputs.size(0)):
+                img_idx = idx * test_loader.batch_size + i
+                predicted_labels.append(predicted[i].item())
+                true_labels.append(test_dataset._labels[img_idx])
+                image_paths.append(test_dataset._images[img_idx])
+
+    trainer.model.train()
+    return predicted_labels, true_labels, image_paths
+
+
 def evaluate_test_accuracy(trainer: Trainer, test_loader):
     import torch
     model = trainer.model
