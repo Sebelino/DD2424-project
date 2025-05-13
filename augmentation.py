@@ -55,25 +55,18 @@ def to_transform(architecture: Literal["resnet18", "resnet34", "resnet50"], aug_
     return transforms.Compose(compose_list)
 
 
-def make_augmented_transform(base_tf):
+def auto_transform(architecture: Literal["resnet18", "resnet34", "resnet50"]):
+    base_tf = make_base_transform(architecture)
     return transforms.Compose([
         transforms.RandomResizedCrop(
             size=base_tf.crop_size,
             scale=(0.8, 1.0),
             ratio=(3 / 4, 4 / 3),
-            # interpolation=base_tf.interpolation,
-            interpolation=InterpolationMode.BILINEAR,
+            interpolation=transforms.InterpolationMode.BILINEAR,
         ),
-        # transforms.RandomHorizontalFlip(p=0.5),
-        # transforms.RandomRotation(
-        #    degrees=15,
-        #    expand=False,
-        #    fill=tuple(int(255 * m) for m in base_tf.mean)  # fill with ImageNet mean
-        # ),
-        # transforms.ColorJitter(0.2, 0.2, 0.2, 0.1),
-        # transforms.RandomGrayscale(p=0.1),
+        transforms.AutoAugment(transforms.AutoAugmentPolicy.IMAGENET),
         transforms.ToTensor(),
-        transforms.Normalize(base_tf.mean, base_tf.std),
+        transforms.Normalize(mean=base_tf.mean, std=base_tf.std),
     ])
 
 
