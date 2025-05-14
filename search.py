@@ -90,7 +90,8 @@ def objective_run(dataset_params, training_params, determinism, trial):
     labelled_train_loader, unlabelled_train_loader, val_loader = make_datasets(
         dataset_params,
         trainer.base_transform,
-        trainer.training_transform
+        trainer.training_transform,
+        trainer.fixmatch_transform
     )
     trainer.load_dataset(labelled_train_loader, unlabelled_train_loader, val_loader)
     result = trainer.train(stop_condition=FinishedOrPruned(trial))
