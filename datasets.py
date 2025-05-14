@@ -9,6 +9,7 @@ from torch.utils.data import DataLoader, random_split, Dataset
 
 from determinism import Determinism
 from util import dumps_inline_lists
+from augmentation import create_fixmatch_transforms
 
 USE_CACHE = True
 
@@ -85,6 +86,30 @@ class DatasetParams:
         return dumps_inline_lists(self.minimal_dict())
 
 
+class FixMatchDataset(Dataset):
+    def __init__(self, base_dataset, weak_transform, strong_transform):
+        self.base_dataset = base_dataset
+        self.weak_transform = weak_transform
+        self.strong_transform = strong_transform
+        
+    def __getitem__(self, idx):
+        img, target = self.base_dataset[idx]
+        
+        # If img is already a tensor, convert back to PIL for transforms
+        if isinstance(img, torch.Tensor):
+            # Convert tensor to PIL
+            img = transforms.ToPILImage()(img)
+        
+        # Apply both transformations to the same image
+        weak_img = self.weak_transform(img)
+        strong_img = self.strong_transform(img)
+        
+        return (weak_img, strong_img), target
+    
+    def __len__(self):
+        return len(self.base_dataset)
+    
+
 @memory.cache
 def balanced_random_split_indices(dataset, lengths, splitting_seed, class_fractions):
     """
@@ -151,6 +176,29 @@ def balanced_random_split_indices(dataset, lengths, splitting_seed, class_fracti
             
     return subset_indices
 
+def create_fixmatch_dataloaders(unlabelled_subset, dataset_params, num_workers):
+    # Create transforms
+    weak_transform, strong_transform = create_fixmatch_transforms()
+    
+    # Create FixMatch dataset
+    fixmatch_dataset = FixMatchDataset(
+        unlabelled_subset, 
+        weak_transform=weak_transform,
+        strong_transform=strong_transform
+    )
+    
+    # Create dataloader
+    unlabelled_train_loader = DataLoader(
+        fixmatch_dataset,
+        batch_size=dataset_params.batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        persistent_workers=False,
+        pin_memory=True,
+        generator=torch.Generator().manual_seed(dataset_params.shuffler_seed),
+        worker_init_fn=Determinism.data_loader_worker_init_fn(dataset_params.shuffler_seed),
+    )
+    return unlabelled_train_loader
 
 def make_datasets(dataset_params: DatasetParams, base_transform, training_transform):
     target_types = dataset_params.target_types
@@ -201,15 +249,10 @@ def make_datasets(dataset_params: DatasetParams, base_transform, training_transf
 
     unlabelled_train_loader = None
     if len(unlabelled_subset) > 0:
-        unlabelled_train_loader = DataLoader(
-            unlabelled_subset,
-            batch_size=dataset_params.batch_size,
-            shuffle=True,
-            num_workers=num_workers,
-            persistent_workers=False,
-            pin_memory=True,
-            generator=torch.Generator().manual_seed(dataset_params.shuffler_seed),
-            worker_init_fn=Determinism.data_loader_worker_init_fn(dataset_params.shuffler_seed),
+        unlabelled_train_loader = create_fixmatch_dataloaders(
+            unlabelled_subset, 
+            dataset_params, 
+            num_workers
         )
 
     val_loader = DataLoader(

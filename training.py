@@ -281,38 +281,53 @@ class Trainer:
 
         unsup_weight = self.params.unsup_weight
         pseudo_threshold = self.params.pseudo_threshold
-        for batch_u in self.unlabelled_train_loader:
-            if isinstance(batch_u, (list, tuple)):
-                x_u = batch_u[0]
-            else:
-                x_u = batch_u
+        
+        for (weak_aug, strong_aug), _ in self.unlabelled_train_loader:
+            weak_aug = weak_aug.to(self.device)
+            strong_aug = strong_aug.to(self.device)
 
-            x_u = x_u.to(self.device)
-
+            # Generate pseudo-labels using weakly augmented images
             with torch.no_grad():
-                logits_u = model(x_u)
+                logits_u = model(weak_aug)
                 probs_u = F.softmax(logits_u, dim=1)
-                pseudo = probs_u.argmax(dim=1)
+                pseudo_labels = probs_u.argmax(dim=1)
 
             if pseudo_threshold is not None:
                 confidence, _ = probs_u.max(dim=1)
                 mask = confidence.ge(pseudo_threshold)
 
                 if mask.any():
-                    inputs_u, labels_u = x_u[mask], pseudo[mask]
+                    # Only use high-confidence predictions
+                    strong_aug_filtered = strong_aug[mask]
+                    pseudo_labels_filtered = pseudo_labels[mask]
+                    
+                    # Train on strongly augmented images using pseudo-labels
                     self.optimizer.zero_grad()
-                    _, unsup_loss = backward_pass(self, inputs_u, labels_u, criterion)
+                    outputs = model(strong_aug_filtered)
+                    unsup_loss = criterion(outputs, pseudo_labels_filtered)
+                    
+                    # Apply weight during backpropagation
+                    weighted_loss = unsup_weight * unsup_loss
+                    weighted_loss.backward()
+                    self.optimizer.step()
+                    
                     running_loss += unsup_weight * unsup_loss.item()
-
             else:
-                # train on all pseudo-labels with no threshold
+                # Use all pseudo-labels without thresholding
                 self.optimizer.zero_grad()
-                _, unsup_loss = backward_pass(self, x_u, pseudo, criterion)
+                outputs = model(strong_aug)
+                unsup_loss = criterion(outputs, pseudo_labels)
+                
+                # Apply weight during backpropagation
+                weighted_loss = unsup_weight * unsup_loss
+                weighted_loss.backward()
+                self.optimizer.step()
+                
                 running_loss += unsup_weight * unsup_loss.item()
 
             self.update_step += 1
             if self.verbose:
-                pb_update_steps.update(1)  # Move the progress bar by 1
+                pb_update_steps.update(1)
 
         return running_loss, pb_update_steps
 

@@ -105,3 +105,43 @@ def deserialize(s: str) -> transforms.Compose:
     }
     obj = eval(s, safe_ns)  # Unsafe but pragmatic
     return obj
+
+def create_fixmatch_transforms():
+    architecture = "resnet50"
+    base_tf = make_base_transform(architecture)
+    
+    # Weak augmentation - just simple flip and small crop
+    weak_transform = transforms.Compose([
+        transforms.RandomResizedCrop(
+            size=base_tf.crop_size,
+            scale=(0.8, 1.0),
+            ratio=(3/4, 4/3),
+            interpolation=InterpolationMode.BILINEAR,
+        ),
+        transforms.RandomHorizontalFlip(p=0.5),
+        transforms.ToTensor(),
+        transforms.Normalize(base_tf.mean, base_tf.std),
+    ])
+    
+    # Strong augmentation - RandAugment + CTAugment as per FixMatch paper
+    # Since RandAugment may not be directly available, we'll use a combination of transforms
+    strong_transform = transforms.Compose([
+        transforms.RandomResizedCrop(
+            size=base_tf.crop_size,
+            scale=(0.8, 1.0),
+            ratio=(3/4, 4/3),
+            interpolation=InterpolationMode.BILINEAR,
+        ),
+        transforms.RandomHorizontalFlip(p=0.5),
+        transforms.ColorJitter(0.4, 0.4, 0.4, 0.1),  # Stronger color jittering
+        transforms.RandomGrayscale(p=0.2),
+        transforms.RandomRotation(
+            degrees=30,  # Stronger rotation
+            expand=False,
+            fill=tuple(int(255 * m) for m in base_tf.mean)
+        ),
+        transforms.ToTensor(),
+        transforms.Normalize(base_tf.mean, base_tf.std),
+    ])
+    
+    return weak_transform, strong_transform
