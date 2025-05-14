@@ -176,7 +176,7 @@ def balanced_random_split_indices(dataset, lengths, splitting_seed, class_fracti
             
     return subset_indices
 
-def create_fixmatch_dataloaders(unlabelled_subset, dataset_params, num_workers, fixmatch_transform: Optional[Callable] = None):
+def create_fixmatch_dataloaders(unlabelled_subset, dataset_params, num_workers, fixmatch_transform):
     if fixmatch_transform is None:
         return None    # Create FixMatch dataset
     fixmatch_dataset = FixMatchDataset(
@@ -197,7 +197,7 @@ def create_fixmatch_dataloaders(unlabelled_subset, dataset_params, num_workers, 
     )
     return unlabelled_train_loader
 
-def make_datasets(dataset_params: DatasetParams, base_transform, training_transform, fixmatch_transform: Optional[Callable] = None):
+def make_datasets(dataset_params: DatasetParams, base_transform, training_transform, fixmatch_transform):
     target_types = dataset_params.target_types
     base_trainval_dataset = load_dataset("trainval", base_transform, target_types)
     augmented_trainval_dataset = load_dataset("trainval", training_transform, target_types)
