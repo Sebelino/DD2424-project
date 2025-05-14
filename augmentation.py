@@ -5,12 +5,21 @@ from torchvision import transforms, models
 from torchvision.models import ResNet50_Weights, ResNet34_Weights, ResNet18_Weights
 from torchvision.transforms import InterpolationMode
 
+
 arch_dict = dict(
     resnet18=(ResNet18_Weights.DEFAULT, models.resnet18),
     resnet34=(ResNet34_Weights.DEFAULT, models.resnet34),
     resnet50=(ResNet50_Weights.DEFAULT, models.resnet50),
 )
 
+
+class FixMatchTransform:
+    def __init__(self, weak_transform, strong_transform):
+        self.weak_transform = weak_transform
+        self.strong_transform = strong_transform
+
+    def __call__(self, img):
+        return self.weak_transform(img), self.strong_transform(img)
 
 @dataclass
 class AugmentationParams:
@@ -106,8 +115,7 @@ def deserialize(s: str) -> transforms.Compose:
     obj = eval(s, safe_ns)  # Unsafe but pragmatic
     return obj
 
-def create_fixmatch_transforms():
-    architecture = "resnet50"
+def create_fixmatch_transform(architecture):
     base_tf = make_base_transform(architecture)
     
     # Weak augmentation - just simple flip and small crop
@@ -143,5 +151,4 @@ def create_fixmatch_transforms():
         transforms.ToTensor(),
         transforms.Normalize(base_tf.mean, base_tf.std),
     ])
-    
-    return weak_transform, strong_transform
+    return FixMatchTransform(weak_transform, strong_transform)

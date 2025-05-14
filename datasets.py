@@ -4,12 +4,13 @@ from typing import Optional, Any, Tuple
 
 import torch
 import torchvision
+from torchvision import transforms
 from joblib import Memory
 from torch.utils.data import DataLoader, random_split, Dataset
 
 from determinism import Determinism
 from util import dumps_inline_lists
-from augmentation import create_fixmatch_transforms
+from augmentation import create_fixmatch_transform, FixMatchTransform
 
 USE_CACHE = True
 
@@ -87,10 +88,9 @@ class DatasetParams:
 
 
 class FixMatchDataset(Dataset):
-    def __init__(self, base_dataset, weak_transform, strong_transform):
+    def __init__(self, base_dataset, fixmatch_transform: FixMatchTransform):
         self.base_dataset = base_dataset
-        self.weak_transform = weak_transform
-        self.strong_transform = strong_transform
+        self.fixmatch_transform = fixmatch_transform
         
     def __getitem__(self, idx):
         img, target = self.base_dataset[idx]
@@ -101,8 +101,7 @@ class FixMatchDataset(Dataset):
             img = transforms.ToPILImage()(img)
         
         # Apply both transformations to the same image
-        weak_img = self.weak_transform(img)
-        strong_img = self.strong_transform(img)
+        weak_img, strong_img = self.fixmatch_transform(img)
         
         return (weak_img, strong_img), target
     
@@ -110,6 +109,7 @@ class FixMatchDataset(Dataset):
         return len(self.base_dataset)
     
 
+    
 @memory.cache
 def balanced_random_split_indices(dataset, lengths, splitting_seed, class_fractions):
     """
@@ -176,15 +176,12 @@ def balanced_random_split_indices(dataset, lengths, splitting_seed, class_fracti
             
     return subset_indices
 
-def create_fixmatch_dataloaders(unlabelled_subset, dataset_params, num_workers):
-    # Create transforms
-    weak_transform, strong_transform = create_fixmatch_transforms()
-    
-    # Create FixMatch dataset
+def create_fixmatch_dataloaders(unlabelled_subset, dataset_params, num_workers, fixmatch_transform: Optional[Callable] = None):
+    if fixmatch_transform is None:
+        return None    # Create FixMatch dataset
     fixmatch_dataset = FixMatchDataset(
         unlabelled_subset, 
-        weak_transform=weak_transform,
-        strong_transform=strong_transform
+        fixmatch_transform
     )
     
     # Create dataloader
@@ -200,7 +197,7 @@ def create_fixmatch_dataloaders(unlabelled_subset, dataset_params, num_workers):
     )
     return unlabelled_train_loader
 
-def make_datasets(dataset_params: DatasetParams, base_transform, training_transform):
+def make_datasets(dataset_params: DatasetParams, base_transform, training_transform, fixmatch_transform: Optional[Callable] = None):
     target_types = dataset_params.target_types
     base_trainval_dataset = load_dataset("trainval", base_transform, target_types)
     augmented_trainval_dataset = load_dataset("trainval", training_transform, target_types)
@@ -252,7 +249,8 @@ def make_datasets(dataset_params: DatasetParams, base_transform, training_transf
         unlabelled_train_loader = create_fixmatch_dataloaders(
             unlabelled_subset, 
             dataset_params, 
-            num_workers
+            num_workers,
+            fixmatch_transform
         )
 
     val_loader = DataLoader(

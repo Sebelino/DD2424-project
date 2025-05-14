@@ -76,6 +76,7 @@ class TrainParams:
     # Finetune l layers simultaneously
     unfreeze_last_l_blocks: Optional[int] = None
     # Unsupervised learning params
+    fixmatch: Optional[bool] = False
     unsup_weight: Optional[float] = 0.5
     pseudo_threshold: Optional[float] = None
     # Masked fine-tuning
@@ -173,6 +174,7 @@ class Trainer:
         self.device = self._make_device()
         self.base_transform = self.make_base_transform(params)
         self.training_transform = self.make_training_transform(params)
+        self.fixmatch_transform = self.make_fixmatch_transform(params)
         self.model = self._make_model(params, self.device)
         self.optimizer = self._make_optimizer(params, self.model)
         self.epoch_to_unfreezing = self._make_unfreezings(params, self.model)
@@ -242,6 +244,12 @@ class Trainer:
         if not params.augmentation.enabled:
             return base_tf
         return params.augmentation.transform
+    
+    @classmethod
+    def make_fixmatch_transform(cls, params: TrainParams):
+        if not params.fixmatch:
+            return None
+        return augmentation.create_fixmatch_transform(params.architecture)
 
     def gpu_acceleration_enabled(self):
         return self.device.type == 'cuda'

@@ -41,7 +41,8 @@ def make_trained_trainer(dataset_params: DatasetParams, training_params: TrainPa
     labelled_train_loader, unlabelled_train_loader, val_loader = make_datasets(
         dataset_params,
         trainer.base_transform,
-        trainer.training_transform
+        trainer.training_transform,
+        trainer.fixmatch_transform
     )
     trainer.load_dataset(labelled_train_loader, unlabelled_train_loader, val_loader)
     result = trainer.train(stop_condition=FinishedAllEpochs())
