@@ -84,7 +84,8 @@ class TrainParams:
     mask_K: int = 1  # number of weights to update per neuron
     contrastive_temp: float = 0.1  # temperature for supervised contrastive stage
     # Per-class weights to use for the loss function
-    class_weights: Optional[Tuple[float, ...]] = None
+    # Underrepresented classes should have greater weight than common classes
+    loss_weights: Optional[Tuple[float, ...]] = None
 
     def minimal_dict(self) -> dict[str, Any]:
         def prune(obj: Any) -> Any:
@@ -393,11 +394,11 @@ class Trainer:
         training_start = time.perf_counter()
         if self.labelled_train_loader is None or self.val_loader is None:
             raise ValueError("Must call Trainer.load(...) before training")
-        if self.params.class_weights is not None:
-            class_weights_tensor = torch.tensor(self.params.class_weights, dtype=torch.float32, device=self.device)
+        if self.params.loss_weights is not None:
+            loss_weights_tensor = torch.tensor(self.params.class_weights, dtype=torch.float32, device=self.device)
         else:
-            class_weights_tensor = None
-        criterion = nn.CrossEntropyLoss(weight=class_weights_tensor)
+            loss_weights_tensor = None
+        criterion = nn.CrossEntropyLoss(weight=loss_weights_tensor)
         model = self.model
 
         max_num_epochs = self.params.n_epochs
