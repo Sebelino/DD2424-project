@@ -64,6 +64,8 @@ class DatasetParams:
     # or, if using binary-category
     #   class_fractions = (0.2,) + (1.0,)
     class_fractions: Optional[Tuple[float, ...]] = (1.0,) * 37
+    # Per-class weights to use when oversampling
+    oversampling_weights: Optional[Tuple[float, ...]] = None
 
     def copy(self) -> 'DatasetParams':
         return copy.deepcopy(self)
@@ -107,9 +109,9 @@ class FixMatchDataset(Dataset):
     
     def __len__(self):
         return len(self.base_dataset)
-    
 
-    
+
+
 @memory.cache
 def balanced_random_split_indices(dataset, lengths, splitting_seed, class_fractions):
     """
@@ -232,11 +234,30 @@ def make_datasets(dataset_params: DatasetParams, base_transform, training_transf
     )
     labelled_subset = torch.utils.data.Subset(train_subset, labelled_subset_indices)
     unlabelled_subset = torch.utils.data.Subset(train_subset, unlabelled_subset_indices)
-
+    
+    # Weighted sampling to compensate for imbalanced classes
+    # Note: sample_weights is a weight for each sample in the dataset,
+    #       but oversampling_weights is a weight for each class!
+    if dataset_params.oversampling_weights is not None:
+        sample_weights = [
+            dataset_params.oversampling_weights[labelled_subset.dataset[i][1]]
+            for i in labelled_subset.indices
+        ]
+        sampler = torch.utils.data.WeightedRandomSampler(
+            weights=sample_weights,
+            num_samples=len(sample_weights),
+            replacement=True,
+        )
+        shuffle = False  # Must be False when sampler is used
+    else:
+        sampler = None
+        shuffle = True
+        
     labelled_train_loader = DataLoader(
         labelled_subset,
         batch_size=dataset_params.batch_size,
-        shuffle=True,
+        shuffle=shuffle,
+        sampler=sampler,
         num_workers=num_workers,
         persistent_workers=False,
         pin_memory=True,
