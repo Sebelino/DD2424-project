@@ -395,7 +395,7 @@ class Trainer:
         if self.labelled_train_loader is None or self.val_loader is None:
             raise ValueError("Must call Trainer.load(...) before training")
         if self.params.loss_weights is not None:
-            loss_weights_tensor = torch.tensor(self.params.class_weights, dtype=torch.float32, device=self.device)
+            loss_weights_tensor = torch.tensor(self.params.loss_weights, dtype=torch.float32, device=self.device)
         else:
             loss_weights_tensor = None
         criterion = nn.CrossEntropyLoss(weight=loss_weights_tensor)
