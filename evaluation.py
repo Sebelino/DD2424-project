@@ -8,6 +8,7 @@ from tqdm.auto import tqdm
 
 from augmentation import AugmentationParams
 from datasets import DatasetParams
+from freezing import MaskedFineTuningParams
 from plotting import make_run_comparison_plot, make_run_comparison_ci_plot, shorten_label
 from run import run, run_multiple
 from training import TrainingResult, TrainParams, Trainer, NagParams
@@ -35,6 +36,8 @@ def tweak(params: TrainParams, overrides: dict[str, Any]):
         if isinstance(v, dict):
             if k == "augmentation":
                 v = AugmentationParams(**{**asdict(params.augmentation), **v})
+            elif k == "mft":
+                v = MaskedFineTuningParams(**{**asdict(params.mft), **v})
             elif k == "optimizer" and params.optimizer.name == "nag":
                 v = NagParams(**{**asdict(params.optimizer), **v})
             else:
@@ -68,6 +71,11 @@ def evaluate_runs(results: Dict[str, TrainingResult]):
 
 
 def evaluate_runs_print(results_per_paramset: Dict[str, Dict[str, TrainingResult]]):
+    for label, paramset_result in results_per_paramset.items():
+        training_elapseds = {l: r.training_elapsed for l, r in paramset_result.items()}
+        arr = np.array(list(training_elapseds.values()))
+        mean_training_elapsed = arr.mean(axis=0)
+        print(f"Elapsed training time: {mean_training_elapsed} for {shorten_label(label)}")
     for label, paramset_result in results_per_paramset.items():
         val_accs = {l: r.validation_accuracies for l, r in paramset_result.items()}
         arr = np.array(list(val_accs.values()))

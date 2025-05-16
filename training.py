@@ -5,19 +5,20 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, asdict
 from typing import Literal, Tuple, Optional, Any
-from torch.optim.lr_scheduler import ReduceLROnPlateau
-
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from tqdm.auto import tqdm
 
 import augmentation
 from datasets import DatasetParams
 from determinism import Determinism
-from util import dumps_inline_lists
+from freezing import compute_gradient_masks, apply_masks_and_freeze, MaskedFineTuningParams, make_unfreezings, \
+    maybe_unfreeze_last_layers
+from util import dumps_inline_lists, suppress_weights_only_warning
 
 
 def evaluate(model, device, loader):
@@ -75,25 +76,23 @@ class TrainParams:
     val_acc_target: Optional[float]
     # Data augmentation
     augmentation: augmentation.AugmentationParams
+    # Masked fine-tuning
+    mft: MaskedFineTuningParams = MaskedFineTuningParams(enabled=False, k=0)
     # Finetune l layers simultaneously
     unfreeze_last_l_blocks: Optional[int] = None
     # Unsupervised learning params
     fixmatch: Optional[bool] = False
     unsup_weight: Optional[float] = 0.5
     pseudo_threshold: Optional[float] = None
-    # Masked fine-tuning
-    masked_finetune: bool = False  # whether to run GPS-style masked fine-tuning
-    mask_K: int = 1  # number of weights to update per neuron
     contrastive_temp: float = 0.1  # temperature for supervised contrastive stage
 
     # Per-class weights to use for the loss function
     # Underrepresented classes should have greater weight than common classes
     loss_weights: Optional[Tuple[float, ...]] = None
 
-    #Scheduler
+    # Scheduler
     use_scheduler: Optional[bool] = False
     scheduler_type: Optional[Literal["plateau"]] = None
-
 
     def minimal_dict(self) -> dict[str, Any]:
         def prune(obj: Any) -> Any:
@@ -127,6 +126,7 @@ class TrainingResult:
     update_steps: Tuple[int, ...]
     epochs: Tuple[int, ...]
     training_elapsed: float
+    training_pre_loop_elapsed: float
 
     def pprint(self):
         return dumps_inline_lists(asdict(self))
@@ -178,7 +178,8 @@ class Trainer:
 
     def __init__(self, params: TrainParams, determinism: Determinism = None, verbose=True):
         if determinism is not None:
-            determinism.sow(params.seed)  # If you want consecutive trainings to yield identical results, you need to make sure to do this
+            # If you want consecutive trainings to yield identical results, you need to make sure to do this
+            determinism.sow(params.seed)
         params = params.copy()
         self.determinism = determinism
         self.verbose = verbose
@@ -188,7 +189,7 @@ class Trainer:
         self.fixmatch_transform = self.make_fixmatch_transform(params)
         self.model = self._make_model(params, self.device)
         self.optimizer = self._make_optimizer(params, self.model)
-        self.epoch_to_unfreezing = self._make_unfreezings(params, self.model)
+        self.epoch_to_unfreezing = make_unfreezings(params.unfreezing_epochs, self.model)
         self.params = params
         self.epoch = 0  # Current epoch. 0 means training has not yet begun. Starts at 1.
         self.update_step = 0  # Current update step. 0 means training has not yet begun. Starts at 1.
@@ -205,11 +206,11 @@ class Trainer:
         if getattr(params, "scheduler_type", None) == "plateau":
             self.scheduler = ReduceLROnPlateau(
                 self.optimizer,
-                mode='max',           # Maximize validation accuracy
-                factor=0.5,           # Reduce LR by half
-                patience=2,           # Wait 2 bad epochs before reducing LR
+                mode='max',  # Maximize validation accuracy
+                factor=0.5,  # Reduce LR by half
+                patience=2,  # Wait 2 bad epochs before reducing LR
                 verbose=True,
-                min_lr=1e-6           # Don't reduce below this
+                min_lr=1e-6  # Don't reduce below this
             )
 
     @classmethod
@@ -269,7 +270,7 @@ class Trainer:
         if not params.augmentation.enabled:
             return base_tf
         return params.augmentation.transform
-    
+
     @classmethod
     def make_fixmatch_transform(cls, params: TrainParams):
         if not params.fixmatch:
@@ -278,25 +279,6 @@ class Trainer:
 
     def gpu_acceleration_enabled(self):
         return self.device.type == 'cuda'
-
-    @classmethod
-    def _make_unfreezings(cls, params: TrainParams, model):
-        # Define layers to gradually unfreeze
-        layer_names = [model.layer4, model.layer3]  # layer4 = last block
-        if params.unfreezing_epochs in {None, ()}:
-            return dict()
-        unfreezing_epochs = sorted(params.unfreezing_epochs)
-        if len(unfreezing_epochs) == 1:
-            return {
-                unfreezing_epochs[0]: {layer_names[0]}
-            }
-        if len(unfreezing_epochs) == 2:
-            return {
-                unfreezing_epochs[0]: ("layer4", layer_names[0]),
-                unfreezing_epochs[1]: ("layer3", layer_names[1]),
-            }
-        else:
-            raise NotImplementedError()
 
     def maybe_unfreeze(self, epoch: int):
         if epoch not in self.epoch_to_unfreezing.keys():
@@ -314,7 +296,7 @@ class Trainer:
 
         unsup_weight = self.params.unsup_weight
         pseudo_threshold = self.params.pseudo_threshold
-        
+
         for (weak_aug, strong_aug), _ in self.unlabelled_train_loader:
             weak_aug = weak_aug.to(self.device)
             strong_aug = strong_aug.to(self.device)
@@ -333,29 +315,29 @@ class Trainer:
                     # Only use high-confidence predictions
                     strong_aug_filtered = strong_aug[mask]
                     pseudo_labels_filtered = pseudo_labels[mask]
-                    
+
                     # Train on strongly augmented images using pseudo-labels
                     self.optimizer.zero_grad()
                     outputs = model(strong_aug_filtered)
                     unsup_loss = criterion(outputs, pseudo_labels_filtered)
-                    
+
                     # Apply weight during backpropagation
                     weighted_loss = unsup_weight * unsup_loss
                     weighted_loss.backward()
                     self.optimizer.step()
-                    
+
                     running_loss += unsup_weight * unsup_loss.item()
             else:
                 # Use all pseudo-labels without thresholding
                 self.optimizer.zero_grad()
                 outputs = model(strong_aug)
                 unsup_loss = criterion(outputs, pseudo_labels)
-                
+
                 # Apply weight during backpropagation
                 weighted_loss = unsup_weight * unsup_loss
                 weighted_loss.backward()
                 self.optimizer.step()
-                
+
                 running_loss += unsup_weight * unsup_loss.item()
 
             self.update_step += 1
@@ -387,25 +369,10 @@ class Trainer:
             return True
         return False
 
-    def maybe_unfreeze_last_layers(self, l, model: nn.Module):
-        if l is None:
-            return
-        # Define the model blocks (last to first)
-        layer_blocks = [
-            model.layer4,
-            model.layer3,
-            model.layer2,
-            model.layer1,
-            model.conv1,
-            model.bn1,
-        ]
-
-        # Unfreeze the last l blocks
-        for i in range(min(l, len(layer_blocks))):
-            for param in layer_blocks[i].parameters():
-                param.requires_grad = True
-
-        print(f"[Trainer] Unfroze last {l} blocks")
+    def maybe_unfreeze_last_layers(self):
+        if self.params.unfreeze_last_l_blocks is not None and self.params.mft.enabled:
+            raise NotImplementedError
+        maybe_unfreeze_last_layers(self.params.unfreeze_last_l_blocks, self.model)
 
     def load_dataset(self, labelled_train_loader, unlabelled_train_loader, val_loader):
         self.labelled_train_loader = labelled_train_loader
@@ -427,13 +394,14 @@ class Trainer:
         num_epochs = max_num_epochs
         model.train()
 
-        self.maybe_unfreeze_last_layers(self.params.unfreeze_last_l_blocks, model)
+        self.maybe_unfreeze_last_layers()
         self.maybe_mask_fine_tune()
 
         remaining_steps = stop_condition.remaining_steps(self)
         pb_update_steps = None
         if self.verbose:
             pb_update_steps = tqdm(range(1, remaining_steps + 1), desc="Update step", leave=True)  # Progress bar
+        training_pre_loop_elapsed = time.perf_counter() - training_start
 
         while not stop_condition.should_stop(self):
             self.epoch += 1
@@ -476,7 +444,6 @@ class Trainer:
                 if self.scheduler is not None and val_acc is not None:
                     self.scheduler.step(val_acc)
 
-
             if self.verbose:
                 pb_update_steps.refresh()
                 tqdm.write(
@@ -503,81 +470,15 @@ class Trainer:
             epochs=tuple(epochs),
             update_steps=tuple(self.recorded_update_steps),
             training_elapsed=training_elapsed,
+            training_pre_loop_elapsed=training_pre_loop_elapsed,
         )
 
     def maybe_mask_fine_tune(self):
-        # if masked fine-tuning is requested, run the mask computation
-        if self.params.masked_finetune:
-            self._compute_masks()
-            # attach gradient hooks so only masked entries get nonzero grads
-            for name, W in self.model.named_parameters():
-                mask = self._masks.get(name)
-                if mask is not None:
-                    W.requires_grad_(True)
-
-                    def hook(g, mask=mask):
-                        return g * mask.to(g.device)
-
-                    W.register_hook(hook)
-            # make sure the classifier head is trainable again
-            for p in self.model.fc.parameters():
-                p.requires_grad = True
-            # rebuild optimizer so it includes the now-trainable fc and masked backbone weights
-            self.optimizer = self._make_optimizer(self.params, self.model)
-
-    def _compute_masks(self):
-        """
-        Stage 1: run one forward/backward pass with a tiny projection head + SupCon loss,
-        then for each weight tensor pick the top-K gradients per output neuron.
-        """
-        # freeze current classifier head
-        for p in self.model.fc.parameters():
-            p.requires_grad = False
-        # swap out fc → Identity so we get features
-        orig_fc = self.model.fc
-        self.model.fc = nn.Identity()
-
-        # build a small projection head on top of features
-        d = orig_fc.in_features
-        proj_head = nn.Sequential(
-            nn.Linear(d, d),
-            nn.ReLU(),
-            nn.Linear(d, d),
-        ).to(self.device)
-
-        # one gradient pass
-        self.model.train()
-        proj_head.train()
-        inputs, labels = next(iter(self.labelled_train_loader))
-        inputs, labels = inputs.to(self.device), labels.to(self.device)
-
-        # compute SupCon loss (you'll need a SupCon implementation)
-        features = self.model(inputs)
-        z = proj_head(features)
-        from masked_fine_tuning import supervised_contrastive_loss
-        loss = supervised_contrastive_loss(z, labels, self.params.contrastive_temp)
-        loss.backward()
-
-        # build masks: for each weight tensor select top-K grads per output neuron
-        for name, W in self.model.named_parameters():
-            if W.grad is None: continue
-            G = W.grad.abs()
-            mask = torch.zeros_like(G)
-            K = self.params.mask_K
-            # assume W shape [in_dim, out_dim]
-            topk = torch.topk(G, k=K, dim=0).indices  # shape [K, out_dim]
-            mask[topk, torch.arange(G.size(1))] = 1
-            self._masks[name] = mask
-
-        # restore fc, clear grads
-        self.model.fc = orig_fc
-        # re-enable the classifier head for the upcoming cross-entropy stage
-        for p in self.model.fc.parameters():
-            p.requires_grad = True
-
-        proj_head.zero_grad()
-        for p in self.model.parameters():
-            p.grad = None
+        if not self.params.mft.enabled:
+            return
+        suppress_weights_only_warning()
+        masks = compute_gradient_masks(self.model, self.labelled_train_loader, self.device, self.params.mft.k)
+        apply_masks_and_freeze(self.model, masks)
 
     def save(self, dataset_params: DatasetParams):
         path = self.make_trainer_path(dataset_params, self.params)
