@@ -213,28 +213,21 @@ def make_datasets(dataset_params: DatasetParams, base_transform, training_transf
     num_workers = 3
 
     # 80% train, 20% val split
-    validation_set_fraction = subset_fraction * dataset_params.validation_set_fraction
-    train_set_fraction = subset_fraction * (1 - validation_set_fraction)
-    train_subset_indices, val_subset_indices = balanced_random_split_indices(
+    val_fraction = subset_fraction * dataset_params.validation_set_fraction
+    train_fraction = subset_fraction * (1 - dataset_params.validation_set_fraction) 
+    labelled_fraction = train_fraction * dataset_params.labelled_data_fraction
+    unlabelled_fraction = train_fraction * (1 - dataset_params.labelled_data_fraction)
+    
+    labelled_indices, unlabelled_indices, val_indices = balanced_random_split_indices(
         base_trainval_dataset,
-        (train_set_fraction, validation_set_fraction),
-        splitting_seed=dataset_params.splitting_seed,
-        class_fractions=dataset_params.class_fractions
+        (labelled_fraction, unlabelled_fraction, val_fraction),
+        dataset_params.splitting_seed,
+        dataset_params.class_fractions
     )
-    train_subset = torch.utils.data.Subset(augmented_trainval_dataset, train_subset_indices)
-    val_subset = torch.utils.data.Subset(base_trainval_dataset, val_subset_indices)
-
-    # Unlabelled dataset if present
-    labelled_data_fraction = dataset_params.labelled_data_fraction
-    unlabelled_data_fraction = 1 - labelled_data_fraction
-    labelled_subset_indices, unlabelled_subset_indices = balanced_random_split_indices(
-        train_subset,
-        (labelled_data_fraction, unlabelled_data_fraction),
-        splitting_seed=dataset_params.splitting_seed,
-        class_fractions=dataset_params.class_fractions
-    )
-    labelled_subset = torch.utils.data.Subset(train_subset, labelled_subset_indices)
-    unlabelled_subset = torch.utils.data.Subset(train_subset, unlabelled_subset_indices)
+    
+    labelled_subset = torch.utils.data.Subset(base_trainval_dataset, labelled_indices)
+    unlabelled_subset = torch.utils.data.Subset(base_trainval_dataset, unlabelled_indices)
+    val_subset = torch.utils.data.Subset(base_trainval_dataset, val_indices)
     
     # Weighted sampling to compensate for imbalanced classes
     # Note: sample_weights is a weight for each sample in the dataset,
