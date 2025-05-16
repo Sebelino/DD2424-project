@@ -16,7 +16,11 @@ def get_labels(dataset: Dataset) -> torch.Tensor:
     Returns labels as a 1D torch.Tensor.
     """
     try:
-        return torch.tensor(dataset._labels)
+        if isinstance(dataset, torch.utils.data.Subset):
+            all_labels = torch.tensor(dataset.dataset._labels)
+            return all_labels[dataset.indices]
+        else:
+            return torch.tensor(dataset._labels)
     except AttributeError:
         return torch.tensor([dataset[i][1] for i in range(len(dataset))])
 
