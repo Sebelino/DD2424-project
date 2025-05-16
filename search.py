@@ -31,6 +31,7 @@ class SearchParams:
     weight_decay: Callable[[Trial], float] = None
     momentum: Callable[[Trial], float] = None
     augmentation: Callable[[Trial], bool] = None
+    dropout: Callable[[Trial], float] = None
     unfreeze_epoch_1: Callable[[Trial], int] = None
     unfreeze_epoch_2: Callable[[Trial, int], int] = None
 
@@ -44,6 +45,9 @@ def objective(dataset_params: DatasetParams, params: TrainParams, search_params:
     params.optimizer.weight_decay = fallback(search_params.weight_decay, trial, params.optimizer.weight_decay)
     params.optimizer.momentum = fallback(search_params.momentum, trial, params.optimizer.momentum)
     params.augmentation.enabled = fallback(search_params.augmentation, trial, params.augmentation.enabled)
+    
+    if search_params.dropout:
+        params.augmentation.dropout_rate = search_params.dropout(trial)
 
     unfreeze_1 = search_params.unfreeze_epoch_1(trial) if search_params.unfreeze_epoch_1 is not None else None
     # Ensure second unfreeze is after first

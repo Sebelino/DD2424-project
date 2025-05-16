@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal,Optional
 
 from torchvision import transforms, models
 from torchvision.models import ResNet50_Weights, ResNet34_Weights, ResNet18_Weights
@@ -25,9 +25,10 @@ class FixMatchTransform:
 class AugmentationParams:
     enabled: bool
     transform: transforms.Compose
+    dropout_rate:Optional[float] = 0.3
 
     def __reduce__(self):  # For pickle
-        return (AugmentationParams, (self.enabled, self.transform))
+        return (AugmentationParams, (self.enabled, self.transform, self.dropout_rate))
 
 
 def make_base_transform(architecture: Literal["resnet18", "resnet34", "resnet50"]):
@@ -152,3 +153,7 @@ def create_fixmatch_transform(architecture):
         transforms.Normalize(base_tf.mean, base_tf.std),
     ])
     return FixMatchTransform(weak_transform, strong_transform)
+
+
+
+

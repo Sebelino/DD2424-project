@@ -5,6 +5,8 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, asdict
 from typing import Literal, Tuple, Optional, Any
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+
 
 import torch
 import torch.nn as nn
@@ -83,9 +85,15 @@ class TrainParams:
     masked_finetune: bool = False  # whether to run GPS-style masked fine-tuning
     mask_K: int = 1  # number of weights to update per neuron
     contrastive_temp: float = 0.1  # temperature for supervised contrastive stage
+
     # Per-class weights to use for the loss function
     # Underrepresented classes should have greater weight than common classes
     loss_weights: Optional[Tuple[float, ...]] = None
+
+    #Scheduler
+    use_scheduler: Optional[bool] = False
+    scheduler_type: Optional[Literal["plateau"]] = None
+
 
     def minimal_dict(self) -> dict[str, Any]:
         def prune(obj: Any) -> Any:
@@ -193,6 +201,16 @@ class Trainer:
         self.unlabelled_train_loader = None
         self.val_loader = None
         self._masks: dict[str, torch.Tensor] = {}
+        self.scheduler = None
+        if getattr(params, "scheduler_type", None) == "plateau":
+            self.scheduler = ReduceLROnPlateau(
+                self.optimizer,
+                mode='max',           # Maximize validation accuracy
+                factor=0.5,           # Reduce LR by half
+                patience=2,           # Wait 2 bad epochs before reducing LR
+                verbose=True,
+                min_lr=1e-6           # Don't reduce below this
+            )
 
     @classmethod
     def _make_model(cls, params: TrainParams, device):
@@ -206,7 +224,11 @@ class Trainer:
             param.requires_grad = True  # Unfreeze final layer
 
         num_features = model.fc.in_features
-        model.fc = nn.Linear(num_features, Trainer.num_classes)
+        model.fc = nn.Sequential(
+            nn.Dropout(p=params.augmentation.dropout_rate if params.augmentation else 0.0),
+            nn.Linear(num_features, Trainer.num_classes)
+        )
+
         return model.to(device)
 
     @classmethod
@@ -451,6 +473,9 @@ class Trainer:
             if should_record_metrics:
                 self.recorded_update_steps.append(self.update_step)
                 self.validation_accuracies.append(val_acc)
+                if self.scheduler is not None and val_acc is not None:
+                    self.scheduler.step(val_acc)
+
 
             if self.verbose:
                 pb_update_steps.refresh()
