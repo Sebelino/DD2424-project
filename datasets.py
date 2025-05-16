@@ -111,8 +111,6 @@ class FixMatchDataset(Dataset):
         return len(self.base_dataset)
 
 
-
-@memory.cache
 def balanced_random_split_indices(dataset, lengths, splitting_seed, class_fractions):
     """
     Splits a dataset into non-overlapping subsets while preserving
@@ -144,14 +142,17 @@ def balanced_random_split_indices(dataset, lengths, splitting_seed, class_fracti
         0.0 <= f <= 1.0 for f in class_fractions
     ), "All class fractions must be between 0 and 1"
     
-    print("Creating balanced split...")
+    # Extract labels
+    try:
+        # Fast, but relies on private attribute
+        labels = dataset._labels
+    except AttributeError:
+        # Fallback to slow, safe method
+        labels = [dataset[i][1] for i in range(len(dataset))]
     
-    from tqdm.auto import tqdm
-    
-    # Group sample indices by class label (slow for large datasets)
+    # Group indices by label (class)
     class_to_indices = dict()
-    for i in tqdm(range(len(dataset))):
-        label = dataset[i][1]
+    for i, label in enumerate(labels):
         if label not in class_to_indices:
             class_to_indices[label] = []
         class_to_indices[label].append(i)
