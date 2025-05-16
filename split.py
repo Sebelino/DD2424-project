@@ -71,13 +71,21 @@ def downsample_to_max_total(label_indices: List[List[int]], max_total: int) -> L
     """
     Downsamples each label's indices proportionally so that the total number of samples 
     does not exceed `max_total`.
+    Uses largest remainder method to round up where possible.
     Returns original indices if total is already within the limit or if `max_total` is None.
     """
     total = sum(len(lst) for lst in label_indices)
     if max_total is None or total <= max_total:
         return label_indices
     scale = max_total / total
-    return [indices[:int(len(indices) * scale)] for indices in label_indices]
+    exact_sizes = [len(indices) * max_total / total for indices in label_indices]
+    floored_sizes = [int(s) for s in exact_sizes]
+    remainders = [s - f for s, f in zip(exact_sizes, floored_sizes)]
+    leftover = max_total - sum(floored_sizes)
+    indices_sorted = sorted(enumerate(remainders), key=lambda x: -x[1])
+    for i in range(leftover):
+        floored_sizes[indices_sorted[i][0]] += 1
+    return [indices[:k] for indices, k in zip(label_indices, floored_sizes)]
 
 
 def proportional_split(label_indices: List[List[int]], split_fracs: List[float]) -> List[List[int]]:
