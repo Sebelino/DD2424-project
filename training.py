@@ -3,7 +3,7 @@ import hashlib
 import os
 import time
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from typing import Literal, Tuple, Optional, Any
 
 import torch
@@ -77,7 +77,8 @@ class TrainParams:
     # Stop training if this validation accuracy is exceeded during training
     val_acc_target: Optional[float] = None
     # Masked fine-tuning
-    mft: MaskedFineTuningParams = MaskedFineTuningParams(enabled=False, k=0)
+    #mft: MaskedFineTuningParams = MaskedFineTuningParams(enabled=False, k=0)
+    mft: MaskedFineTuningParams = field(default_factory=lambda: MaskedFineTuningParams(enabled=False, k=0))
     # Finetune l layers simultaneously
     unfreeze_last_l_blocks: Optional[int] = None
     # Unsupervised learning params
