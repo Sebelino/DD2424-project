@@ -1,7 +1,9 @@
 import pytest
 
-from determinism import Determinism # Must appear before any torch import
+import augmentation
+from augmentation import AugmentationParams
 from datasets import DatasetParams
+from determinism import Determinism  # Must appear before any torch import
 from training import TrainParams, NagParams
 
 
@@ -16,8 +18,8 @@ def example_dataset_params(determinism):
         splitting_seed=determinism.seed,
         shuffler_seed=determinism.seed,
         batch_size=32,
-        trainval_size=100,  # Load a subset
-        validation_set_fraction=0.2,  # 20 % of trainval set
+        trainval_size=100,
+        validation_set_fraction=0.2,
     )
 
 
@@ -32,9 +34,17 @@ def example_training_params(determinism) -> TrainParams:
             weight_decay=1e-4,
             momentum=0.9,
         ),
-        freeze_layers=True,
-        unfreezing_epochs=(3, 6),
+        augmentation=AugmentationParams(
+            enabled=False,
+            transform=augmentation.auto_transform("resnet50"),
+            dropout_rate=None,
+        ),
         validation_freq=1,
+        freeze_layers=True,
+        unfreeze_last_l_blocks=None,
+        unfreezing_epochs=(3, 6),
+        use_scheduler=False,
+        scheduler_type="plateau",
         time_limit_seconds=None,
         val_acc_target=None,
     )
