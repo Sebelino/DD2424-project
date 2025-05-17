@@ -91,9 +91,15 @@ def compute_gradient_masks(model, dataloader, device, k):
     return masks
 
 
-def apply_masks_and_freeze(model, masks=None):
-    # Masked fine-tuning: only masked entries require grad
+def apply_masks_and_freeze(model, masks=None, allowed_prefixes=None):
     for name, param in model.named_parameters():
+        prefix = name.split('.')[0]
+        if masks is None:
+            param.requires_grad = True
+            continue
+        if allowed_prefixes is not None and prefix not in allowed_prefixes:
+            param.requires_grad = False
+            continue
         mask = masks.get(name)
         if mask is not None:
             param.requires_grad = True

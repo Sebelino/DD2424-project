@@ -200,7 +200,7 @@ class Trainer:
         self.labelled_train_loader = None
         self.unlabelled_train_loader = None
         self.val_loader = None
-        self._masks: dict[str, torch.Tensor] = {}
+        self.masks: dict[str, torch.Tensor] = {}
         self.scheduler = None
         if getattr(params, "scheduler_type", None) == "plateau":
             self.scheduler = ReduceLROnPlateau(
@@ -408,6 +408,7 @@ class Trainer:
             total = 0
 
             self.maybe_unfreeze(self.epoch)
+            self.maybe_mask_fine_tune()
 
             # psuedo-labelling
             running_loss, pb_update_steps = self.maybe_semisupervised_learning(self.model, criterion, running_loss,
@@ -475,8 +476,18 @@ class Trainer:
         if not self.params.mft.enabled:
             return
         suppress_weights_only_warning()
-        masks = compute_gradient_masks(self.model, self.labelled_train_loader, self.device, self.params.mft.k)
-        apply_masks_and_freeze(self.model, masks)
+        if not self.masks:
+            self.masks = compute_gradient_masks(
+                self.model, self.labelled_train_loader, self.device, self.params.mft.k
+            )
+        # Determine which modules are currently unfrozen (prefixes)
+        allowed = set(
+            name.split('.')[0]
+            for name, param in self.model.named_parameters()
+            if param.requires_grad
+        )
+        # Apply masking only to those
+        apply_masks_and_freeze(self.model, self.masks, allowed)
 
     def save(self, dataset_params: DatasetParams):
         path = self.make_trainer_path(dataset_params, self.params)
