@@ -478,6 +478,7 @@ class Trainer:
             return
         suppress_weights_only_warning()
         if not self.masks:
+            # Parameter selection in GPS
             self.masks = compute_gradient_masks(
                 self.model, self.labelled_train_loader, self.device, self.params.mft.k
             )

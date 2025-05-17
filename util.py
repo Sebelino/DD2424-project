@@ -43,3 +43,10 @@ def suppress_weights_only_warning():
         message=r"You are using `torch\.load` with `weights_only=False`.*",
         category=FutureWarning
     )
+
+
+def shorten_label(label):
+    limit = 50
+    if len(label) > limit:
+        label = label[:limit - 1] + "…"
+    return label

@@ -1,8 +1,10 @@
-def shorten_label(label):
-    limit = 50
-    if len(label) > limit:
-        label = label[:limit - 1] + "…"
-    return label
+import copy
+
+import numpy as np
+from matplotlib import pyplot as plt
+from scipy import stats
+
+from util import shorten_label
 
 
 def make_run_comparison_plot(epochs, accuracies_dict):
@@ -100,4 +102,76 @@ def make_run_comparison_ci_plot(
     plt.tight_layout()
     if plot_fname:
         fig.savefig(plot_fname)
+    plt.show()
+
+
+def plot_elapsed(baseline_label, times: dict[str, list[float]]):
+    num_runs = len(times[baseline_label])
+
+    labels = list(times.keys())
+
+    times_no_baseline = copy.deepcopy(times)
+    del times_no_baseline[baseline_label]
+    diff_labels = list(times_no_baseline.keys())
+
+    t_crit = stats.t.ppf(0.975, df=num_runs - 1)
+    means = {}
+    cis = {}
+    for label, vals in times.items():
+        arr = np.array(vals)
+        means[label] = arr.mean()
+        cis[label] = t_crit * arr.std(ddof=1) / np.sqrt(num_runs)
+
+    base_arr = np.array(times[baseline_label])
+    diffs = {}
+    n_boot = 5000
+    for label in diff_labels:
+        arr = np.array(times[label])
+        delta = arr - base_arr
+        boot = np.random.choice(delta, size=(n_boot, num_runs), replace=True).mean(axis=1)
+        low, high = np.percentile(boot, [2.5, 97.5])
+        diffs[label] = (delta.mean(), delta.mean() - low, high - delta.mean())
+
+    cmap = plt.get_cmap('tab10')
+    colors = cmap.colors[:len(labels)]
+    color_map = dict(zip(labels, colors))
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+
+    for idx, label in enumerate(labels):
+        arr = np.array(times[label])
+        jitter = (np.random.rand(num_runs) - .5) * .2
+        ax1.scatter(
+            idx + jitter, arr,
+            color=color_map[label], alpha=0.6
+        )
+        ax1.errorbar(
+            idx, means[label],
+            yerr=cis[label],
+            fmt='o', color=color_map[label], capsize=5
+        )
+
+    ax1.plot(range(len(labels)), [means[l] for l in labels],
+             linestyle='--', color='gray')
+    ax1.set_xticks(range(len(labels)))
+    ax1.set_xticklabels(labels)
+    ax1.set_ylabel('Elapsed time (s)')
+    ax1.set_title('Timing across parameter settings')
+
+    x = np.arange(1, len(labels))
+    for xi, label in zip(x, diff_labels):
+        m, err_low, err_high = diffs[label]
+        ax2.errorbar(
+            xi, m,
+            yerr=[[err_low], [err_high]],
+            fmt='o', color=color_map[label], capsize=5
+        )
+
+    ax2.axhline(0, linestyle='--', color='gray')
+    ax2.set_xticks(x)
+    ax2.set_xticklabels(diff_labels)
+    ax2.set_ylabel(f'Mean difference vs {baseline_label} (s)')
+    ax2.set_title('Bootstrap 95% CIs of differences')
+
+    plt.tight_layout()
     plt.show()
