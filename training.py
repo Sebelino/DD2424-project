@@ -16,7 +16,8 @@ from tqdm.auto import tqdm
 import augmentation
 from datasets import DatasetParams
 from determinism import Determinism
-from freezing import compute_gradient_masks, apply_masks_and_freeze, MaskedFineTuningParams, make_unfreezings
+from freezing import compute_gradient_masks, apply_masks_and_freeze, MaskedFineTuningParams, make_unfreezings, \
+    maybe_unfreeze_last_layers
 from util import dumps_inline_lists, suppress_weights_only_warning
 
 
@@ -76,7 +77,7 @@ class TrainParams:
     # Stop training if this validation accuracy is exceeded during training
     val_acc_target: Optional[float] = None
     # Masked fine-tuning
-    #mft: MaskedFineTuningParams = MaskedFineTuningParams(enabled=False, k=0)
+    # mft: MaskedFineTuningParams = MaskedFineTuningParams(enabled=False, k=0)
     mft: MaskedFineTuningParams = field(default_factory=lambda: MaskedFineTuningParams(enabled=False, k=0))
     # Finetune l layers simultaneously
     unfreeze_last_l_blocks: Optional[int] = None
@@ -226,7 +227,8 @@ class Trainer:
 
         num_features = model.fc.in_features
         model.fc = nn.Sequential(
-            nn.Dropout(p=params.augmentation.dropout_rate if params.augmentation and params.augmentation.dropout_rate else 0.0),
+            nn.Dropout(
+                p=params.augmentation.dropout_rate if params.augmentation and params.augmentation.dropout_rate else 0.0),
             nn.Linear(num_features, params.num_classes)
         )
 
@@ -369,30 +371,10 @@ class Trainer:
             return True
         return False
 
-#     def maybe_unfreeze_last_layers(self, l, model: nn.Module):
-#         if self.params.unfreeze_last_l_blocks is not None and self.params.mft.enabled:
-#             raise NotImplementedError
-#         maybe_unfreeze_last_layers(self.params.unfreeze_last_l_blocks, self.model)
     def maybe_unfreeze_last_layers(self, l, model: nn.Module):
-        if l is None:
-            return
-        # Define the model blocks (last to first)
-        layer_blocks = [
-            model.layer4,
-            model.layer3,
-            model.layer2,
-            model.layer1,
-            model.conv1,
-            model.bn1,
-        ]
-
-        # Unfreeze the last l blocks
-        for i in range(min(l, len(layer_blocks))):
-            for param in layer_blocks[i].parameters():
-                param.requires_grad = True
-
-        print(f"[Trainer] Unfroze last {l} blocks")
-
+        if self.params.unfreeze_last_l_blocks is not None and self.params.mft.enabled:
+            raise NotImplementedError
+        maybe_unfreeze_last_layers(self.params.unfreeze_last_l_blocks, self.model)
 
     def load_dataset(self, labelled_train_loader, unlabelled_train_loader, val_loader):
         self.labelled_train_loader = labelled_train_loader
@@ -414,7 +396,7 @@ class Trainer:
         self.model.train()
 
         self.maybe_unfreeze_last_layers(self.params.unfreeze_last_l_blocks, self.model)
-        self.optimizer = self._make_optimizer(self.params, self.model) 
+        self.optimizer = self._make_optimizer(self.params, self.model)
         self.maybe_mask_fine_tune()
 
         remaining_steps = stop_condition.remaining_steps(self)
@@ -575,6 +557,7 @@ class Trainer:
         self.validation_accuracies = list(checkpoint.get('validation_accuracies', []))
         if self.verbose:
             print(f"[Trainer] Loaded checkpoint from {path} (epoch {self.epoch})")
+
 
 # -
 

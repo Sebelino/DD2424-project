@@ -31,28 +31,26 @@ def make_unfreezings(unfreezing_epochs, model):
         raise NotImplementedError()
 
 
+def maybe_unfreeze_last_layers(l, model: nn.Module):
+    if l is None:
+        return
+    # Define the model blocks (last to first)
+    layer_blocks = [
+        model.layer4,
+        model.layer3,
+        model.layer2,
+        model.layer1,
+        model.conv1,
+        model.bn1,
+    ]
 
-# +
-# def maybe_unfreeze_last_layers(l, model: nn.Module):
-#     if l is None:
-#         return
-#     # Define the model blocks (last to first)
-#     layer_blocks = [
-#         model.layer4,
-#         model.layer3,
-#         model.layer2,
-#         model.layer1,
-#         model.conv1,
-#         model.bn1,
-#     ]
+    # Unfreeze the last l blocks
+    for i in range(min(l, len(layer_blocks))):
+        for param in layer_blocks[i].parameters():
+            param.requires_grad = True
 
-#     # Unfreeze the last l blocks
-#     for i in range(min(l, len(layer_blocks))):
-#         for param in layer_blocks[i].parameters():
-#             param.requires_grad = True
+    print(f"[Trainer] Unfroze last {l} blocks")
 
-#     print(f"[Trainer] Unfroze last {l} blocks")
-# -
 
 @dataclass
 class MaskedFineTuningParams:
