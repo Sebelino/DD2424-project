@@ -226,7 +226,7 @@ class Trainer:
 
         num_features = model.fc.in_features
         model.fc = nn.Sequential(
-            nn.Dropout(p=params.augmentation.dropout_rate if params.augmentation else 0.0),
+            nn.Dropout(p=params.augmentation.dropout_rate if params.augmentation and params.augmentation.dropout_rate else 0.0),
             nn.Linear(num_features, params.num_classes)
         )
 
