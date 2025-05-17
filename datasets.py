@@ -60,10 +60,8 @@ class DatasetParams:
     labelled_data_fraction: Optional[float] = 1.0
     # Specify percentage of each class to use to create imbalanced dataset.
     # Default is to use 100% of each class. There are 37 classes in the pet dataset.
-    # Example: To use 20% of the cat samples, set
-    #   class_fractions = (0.2,)*25 + (1.0,)*12
-    # or, if using binary-category
-    #   class_fractions = (0.2,) + (1.0,)
+    # Example: To use 20% of the first class, set
+    #   class_fractions = (0.2,) + (1.0,)*36,
     class_fractions: Optional[Tuple[float, ...]] = (1.0,) * 37
     # Per-class weights to use when oversampling
     oversampling_weights: Optional[Tuple[float, ...]] = None
