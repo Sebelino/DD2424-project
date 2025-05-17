@@ -387,11 +387,10 @@ class Trainer:
         else:
             loss_weights_tensor = None
         criterion = nn.CrossEntropyLoss(weight=loss_weights_tensor)
-        model = self.model
 
         max_num_epochs = self.params.n_epochs
         num_epochs = max_num_epochs
-        model.train()
+        self.model.train()
 
         self.maybe_unfreeze_last_layers()
         self.maybe_mask_fine_tune()
@@ -411,7 +410,7 @@ class Trainer:
             self.maybe_unfreeze(self.epoch)
 
             # psuedo-labelling
-            running_loss, pb_update_steps = self.maybe_semisupervised_learning(model, criterion, running_loss,
+            running_loss, pb_update_steps = self.maybe_semisupervised_learning(self.model, criterion, running_loss,
                                                                                pb_update_steps)
 
             for inputs, labels in self.labelled_train_loader:
@@ -430,7 +429,7 @@ class Trainer:
 
             should_record_metrics = self.should_record_metrics()
             if should_record_metrics:
-                val_acc = evaluate(model, self.device, self.val_loader)
+                val_acc = evaluate(self.model, self.device, self.val_loader)
                 val_acc_str = f", Val Acc: {100 * val_acc:.2f}%"
             else:
                 val_acc = None
