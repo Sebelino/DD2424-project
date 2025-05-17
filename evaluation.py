@@ -8,9 +8,11 @@ from tqdm.auto import tqdm
 
 from augmentation import AugmentationParams
 from datasets import DatasetParams
-from plotting import make_run_comparison_plot, make_run_comparison_ci_plot, shorten_label
+from freezing import MaskedFineTuningParams
+from plotting import make_run_comparison_plot, make_run_comparison_ci_plot, plot_elapsed
 from run import run, run_multiple
 from training import TrainingResult, TrainParams, Trainer, NagParams
+from util import shorten_label
 
 
 def make_paramset_string(params: dict) -> str:
@@ -35,6 +37,8 @@ def tweak(params: TrainParams, overrides: dict[str, Any]):
         if isinstance(v, dict):
             if k == "augmentation":
                 v = AugmentationParams(**{**asdict(params.augmentation), **v})
+            elif k == "mft":
+                v = MaskedFineTuningParams(**{**asdict(params.mft), **v})
             elif k == "optimizer" and params.optimizer.name == "nag":
                 v = NagParams(**{**asdict(params.optimizer), **v})
             else:
@@ -68,6 +72,11 @@ def evaluate_runs(results: Dict[str, TrainingResult]):
 
 
 def evaluate_runs_print(results_per_paramset: Dict[str, Dict[str, TrainingResult]]):
+    for label, paramset_result in results_per_paramset.items():
+        training_elapseds = {l: r.training_elapsed for l, r in paramset_result.items()}
+        arr = np.array(list(training_elapseds.values()))
+        mean_training_elapsed = arr.mean(axis=0)
+        print(f"Elapsed training time: {mean_training_elapsed} for {shorten_label(label)}")
     for label, paramset_result in results_per_paramset.items():
         val_accs = {l: r.validation_accuracies for l, r in paramset_result.items()}
         arr = np.array(list(val_accs.values()))
@@ -248,3 +257,8 @@ def show_misclassified(misclassified_samples):
         shutil.copy(img_path, os.path.join(misclassified_dir, new_filename))
 
     print(f"Copied {len(misclassified_samples)} misclassified images to {misclassified_dir}")
+
+
+def evaluate_elapsed_time(results_per_paramset: Dict[str, Dict[str, TrainingResult]], baseline_label: str):
+    times = {psl: [r.training_elapsed for _, r in v.items()] for psl, v in results_per_paramset.items()}
+    plot_elapsed(baseline_label, times)
