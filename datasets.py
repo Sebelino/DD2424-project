@@ -153,8 +153,8 @@ def make_datasets(dataset_params: DatasetParams, base_transform, training_transf
         max_training_samples = dataset_params.trainval_size
     )
     
-    labelled_subset = torch.utils.data.Subset(base_trainval_dataset, labelled_indices)
-    unlabelled_subset = torch.utils.data.Subset(base_trainval_dataset, unlabelled_indices)
+    labelled_subset = torch.utils.data.Subset(augmented_trainval_dataset, labelled_indices)
+    unlabelled_subset = torch.utils.data.Subset(augmented_trainval_dataset, unlabelled_indices)
     val_subset = torch.utils.data.Subset(base_trainval_dataset, val_indices)
     
     # Weighted sampling to compensate for imbalanced classes
