@@ -68,14 +68,14 @@ class TrainParams:
     freeze_layers: bool
     # Epochs (unordered) at which we unfreeze the second-to-last layer, then third-to-last layer
     unfreezing_epochs: Tuple[int, ...]
-    # Number of times per epoch validation accuracy is recorded
-    validation_freq: Optional[int]
-    # Computational budget in seconds -- aborts training when the time limit is exceeded
-    time_limit_seconds: Optional[int]
-    # Stop training if this validation accuracy is exceeded during training
-    val_acc_target: Optional[float]
     # Data augmentation
     augmentation: augmentation.AugmentationParams
+    # Number of times per epoch validation accuracy is recorded
+    validation_freq: Optional[int] = 1
+    # Computational budget in seconds -- aborts training when the time limit is exceeded
+    time_limit_seconds: Optional[int] = None
+    # Stop training if this validation accuracy is exceeded during training
+    val_acc_target: Optional[float] = None
     # Masked fine-tuning
     mft: MaskedFineTuningParams = MaskedFineTuningParams(enabled=False, k=0)
     # Finetune l layers simultaneously
