@@ -85,10 +85,11 @@ class TrainParams:
     unsup_weight: Optional[float] = 0.5
     pseudo_threshold: Optional[float] = None
     contrastive_temp: float = 0.1  # temperature for supervised contrastive stage
-
     # Per-class weights to use for the loss function
     # Underrepresented classes should have greater weight than common classes
     loss_weights: Optional[Tuple[float, ...]] = None
+    # Number of outputs in final fully connected layer
+    num_classes: int = 37
 
     # Scheduler
     use_scheduler: Optional[bool] = False
@@ -174,8 +175,6 @@ class FinishedEpochs(StopCondition):
 
 
 class Trainer:
-    num_classes = 37
-
     def __init__(self, params: TrainParams, determinism: Determinism = None, verbose=True):
         if determinism is not None:
             # If you want consecutive trainings to yield identical results, you need to make sure to do this
@@ -227,7 +226,7 @@ class Trainer:
         num_features = model.fc.in_features
         model.fc = nn.Sequential(
             nn.Dropout(p=params.augmentation.dropout_rate if params.augmentation else 0.0),
-            nn.Linear(num_features, Trainer.num_classes)
+            nn.Linear(num_features, params.num_classes)
         )
 
         return model.to(device)
