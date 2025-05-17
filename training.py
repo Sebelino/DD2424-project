@@ -16,8 +16,7 @@ from tqdm.auto import tqdm
 import augmentation
 from datasets import DatasetParams
 from determinism import Determinism
-from freezing import compute_gradient_masks, apply_masks_and_freeze, MaskedFineTuningParams, make_unfreezings, \
-    maybe_unfreeze_last_layers
+from freezing import compute_gradient_masks, apply_masks_and_freeze, MaskedFineTuningParams, make_unfreezings
 from util import dumps_inline_lists, suppress_weights_only_warning
 
 
@@ -175,6 +174,7 @@ class FinishedEpochs(StopCondition):
         return trainer.epoch >= self.epoch_at_start_of_session + self.epoch_count
 
 
+# +
 class Trainer:
     def __init__(self, params: TrainParams, determinism: Determinism = None, verbose=True):
         if determinism is not None:
@@ -369,10 +369,30 @@ class Trainer:
             return True
         return False
 
-    def maybe_unfreeze_last_layers(self):
-        if self.params.unfreeze_last_l_blocks is not None and self.params.mft.enabled:
-            raise NotImplementedError
-        maybe_unfreeze_last_layers(self.params.unfreeze_last_l_blocks, self.model)
+#     def maybe_unfreeze_last_layers(self, l, model: nn.Module):
+#         if self.params.unfreeze_last_l_blocks is not None and self.params.mft.enabled:
+#             raise NotImplementedError
+#         maybe_unfreeze_last_layers(self.params.unfreeze_last_l_blocks, self.model)
+    def maybe_unfreeze_last_layers(self, l, model: nn.Module):
+        if l is None:
+            return
+        # Define the model blocks (last to first)
+        layer_blocks = [
+            model.layer4,
+            model.layer3,
+            model.layer2,
+            model.layer1,
+            model.conv1,
+            model.bn1,
+        ]
+
+        # Unfreeze the last l blocks
+        for i in range(min(l, len(layer_blocks))):
+            for param in layer_blocks[i].parameters():
+                param.requires_grad = True
+
+        print(f"[Trainer] Unfroze last {l} blocks")
+
 
     def load_dataset(self, labelled_train_loader, unlabelled_train_loader, val_loader):
         self.labelled_train_loader = labelled_train_loader
@@ -393,7 +413,8 @@ class Trainer:
         num_epochs = max_num_epochs
         self.model.train()
 
-        self.maybe_unfreeze_last_layers()
+        self.maybe_unfreeze_last_layers(self.params.unfreeze_last_l_blocks, self.model)
+        self.optimizer = self._make_optimizer(self.params, self.model) 
         self.maybe_mask_fine_tune()
 
         remaining_steps = stop_condition.remaining_steps(self)
@@ -523,34 +544,31 @@ class Trainer:
         if self.verbose:
             print(f"[Trainer] Saved checkpoint to {path}")
 
-    def load_checkpoint(self, path: str, map_location=None):
+    def load_checkpoint(self, path: str, map_location=None, load_optimizer=True):
         checkpoint = torch.load(path, map_location=map_location or self.device)
         self.epoch = checkpoint.get('epoch', 0)
         self.update_step = checkpoint.get('update_step', 0)
         self.model.load_state_dict(checkpoint['model_state_dict'])
 
-        # 3) replay the freeze/unfreeze schedule up to self.epoch
-        #    a) freeze everything if you used freeze_layers=True
+        # Rebuild freeze/unfreeze schedule
         if self.params.freeze_layers:
             for p in self.model.parameters():
                 p.requires_grad = False
-
-        #    b) always unfreeze the final FC layer
         for p in self.model.fc.parameters():
             p.requires_grad = True
-
-        #    c) unfreeze any of layer3/layer4 that you’d un-frozen during training
-        #       (your epoch_to_unfreezing maps epoch→(label, layer_module))
         for unfreeze_epoch, (label, layer_mod) in self.epoch_to_unfreezing.items():
             if unfreeze_epoch <= self.epoch:
                 for p in layer_mod.parameters():
                     p.requires_grad = True
 
-        # 4) now rebuild your optimizer so its param-groups line up
+        # Rebuild optimizer
         self.optimizer = self._make_optimizer(self.params, self.model)
 
-        # 5) load the saved optimizer state (now the group sizes match)
-        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        if load_optimizer:
+            try:
+                self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            except ValueError as e:
+                print("[Warning] Failed to load optimizer state_dict:", e)
 
         self.training_losses = list(checkpoint.get('training_losses', []))
         self.training_accuracies = list(checkpoint.get('training_accuracies', []))
@@ -558,6 +576,7 @@ class Trainer:
         if self.verbose:
             print(f"[Trainer] Loaded checkpoint from {path} (epoch {self.epoch})")
 
+# -
 
 def terminate_workers(labelled_train_loader, unlabelled_train_loader, val_loader):
     for loader in (labelled_train_loader, unlabelled_train_loader, val_loader):
