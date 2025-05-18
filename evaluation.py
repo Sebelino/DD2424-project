@@ -277,7 +277,7 @@ def evaluate_final_test_accuracy(
 ):
     suppress_weights_only_warning()
     eval_params = training_params.copy()
-    test_dataset = load_dataset("test", Trainer.make_base_transform(eval_params))
+    test_dataset = load_dataset("test", Trainer.make_base_transform(eval_params), dataset_params.target_types)
     print(f"Test size: {len(test_dataset)}")
 
     misclassified_samples = []
