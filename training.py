@@ -14,7 +14,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from tqdm.auto import tqdm
 
 import augmentation
-from datasets import DatasetParams
+from datasets import DatasetParams, terminate_workers
 from determinism import Determinism
 from freezing import compute_gradient_masks, apply_masks_and_freeze, MaskedFineTuningParams, make_unfreezings, \
     maybe_unfreeze_last_layers
@@ -462,7 +462,7 @@ class Trainer:
             pb_update_steps.close()
 
         # Shouldn't be necessary, should prevent tqdm-related hanging if it appears
-        terminate_workers(self.labelled_train_loader, self.unlabelled_train_loader, self.val_loader)
+        terminate_workers([self.labelled_train_loader, self.unlabelled_train_loader, self.val_loader])
 
         epochs = range(1, num_epochs + 1)
         training_elapsed = time.perf_counter() - training_start
@@ -557,13 +557,3 @@ class Trainer:
         self.validation_accuracies = list(checkpoint.get('validation_accuracies', []))
         if self.verbose:
             print(f"[Trainer] Loaded checkpoint from {path} (epoch {self.epoch})")
-
-
-# -
-
-def terminate_workers(labelled_train_loader, unlabelled_train_loader, val_loader):
-    for loader in (labelled_train_loader, unlabelled_train_loader, val_loader):
-        it = getattr(loader, "_iterator", None)
-        if it is not None:
-            it._shutdown_workers()
-            del loader._iterator

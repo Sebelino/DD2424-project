@@ -4,14 +4,14 @@ from typing import Optional, Any, Tuple
 
 import torch
 import torchvision
-from torchvision import transforms
 from joblib import Memory
 from torch.utils.data import DataLoader, Dataset
+from torchvision import transforms
 
+from augmentation import FixMatchTransform
 from determinism import Determinism
-from util import dumps_inline_lists
-from augmentation import create_fixmatch_transform, FixMatchTransform
 from split import split_dataset_indices
+from util import dumps_inline_lists
 
 USE_CACHE = True
 
@@ -92,32 +92,32 @@ class FixMatchDataset(Dataset):
     def __init__(self, base_dataset, fixmatch_transform: FixMatchTransform):
         self.base_dataset = base_dataset
         self.fixmatch_transform = fixmatch_transform
-        
+
     def __getitem__(self, idx):
         img, target = self.base_dataset[idx]
-        
+
         # If img is already a tensor, convert back to PIL for transforms
         if isinstance(img, torch.Tensor):
             # Convert tensor to PIL
             img = transforms.ToPILImage()(img)
-        
+
         # Apply both transformations to the same image
         weak_img, strong_img = self.fixmatch_transform(img)
-        
+
         return (weak_img, strong_img), target
-    
+
     def __len__(self):
         return len(self.base_dataset)
 
 
 def create_fixmatch_dataloaders(unlabelled_subset, dataset_params, num_workers, fixmatch_transform):
     if fixmatch_transform is None:
-        return None    # Create FixMatch dataset
+        return None  # Create FixMatch dataset
     fixmatch_dataset = FixMatchDataset(
-        unlabelled_subset, 
+        unlabelled_subset,
         fixmatch_transform
     )
-    
+
     # Create dataloader
     unlabelled_train_loader = DataLoader(
         fixmatch_dataset,
@@ -144,19 +144,19 @@ def make_datasets(dataset_params: DatasetParams, base_transform, training_transf
     train_fraction = 1 - dataset_params.validation_set_fraction
     labelled_fraction = train_fraction * dataset_params.labelled_data_fraction
     unlabelled_fraction = train_fraction * (1 - dataset_params.labelled_data_fraction)
-    
+
     labelled_indices, unlabelled_indices, val_indices = split_dataset_indices(
-        dataset = base_trainval_dataset,
-        split_fractions = (labelled_fraction, unlabelled_fraction, val_fraction),
-        seed = dataset_params.splitting_seed,
-        label_fractions = dataset_params.class_fractions,
-        max_training_samples = dataset_params.trainval_size
+        dataset=base_trainval_dataset,
+        split_fractions=(labelled_fraction, unlabelled_fraction, val_fraction),
+        seed=dataset_params.splitting_seed,
+        label_fractions=dataset_params.class_fractions,
+        max_training_samples=dataset_params.trainval_size
     )
-    
+
     labelled_subset = torch.utils.data.Subset(augmented_trainval_dataset, labelled_indices)
     unlabelled_subset = torch.utils.data.Subset(augmented_trainval_dataset, unlabelled_indices)
     val_subset = torch.utils.data.Subset(base_trainval_dataset, val_indices)
-    
+
     # Weighted sampling to compensate for imbalanced classes
     # Note: sample_weights is a weight for each sample in the dataset,
     #       but oversampling_weights is a weight for each class!
@@ -174,7 +174,7 @@ def make_datasets(dataset_params: DatasetParams, base_transform, training_transf
     else:
         sampler = None
         shuffle = True
-        
+
     labelled_train_loader = DataLoader(
         labelled_subset,
         batch_size=dataset_params.batch_size,
@@ -190,8 +190,8 @@ def make_datasets(dataset_params: DatasetParams, base_transform, training_transf
     unlabelled_train_loader = None
     if len(unlabelled_subset) > 0:
         unlabelled_train_loader = create_fixmatch_dataloaders(
-            unlabelled_subset, 
-            dataset_params, 
+            unlabelled_subset,
+            dataset_params,
             num_workers,
             fixmatch_transform
         )
@@ -207,3 +207,11 @@ def make_datasets(dataset_params: DatasetParams, base_transform, training_transf
     )
 
     return labelled_train_loader, unlabelled_train_loader, val_loader
+
+
+def terminate_workers(loaders):
+    for loader in loaders:
+        it = getattr(loader, "_iterator", None)
+        if it is not None:
+            it._shutdown_workers()
+            del loader._iterator
