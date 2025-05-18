@@ -1,7 +1,6 @@
 # DD2424-project - MeowWoofNet
 
-![image](https://github.com/user-attachments/assets/19f9e29b-262f-4544-b1ea-5e75744964d5)
-
+![image](https://github.com/user-attachments/assets/e0c0d99f-fe50-42b1-9ff7-d2361992d9c3)
 
 # Usage
 
