@@ -357,11 +357,12 @@ class Trainer:
             raise NotImplementedError()
 
     def should_stop_training_early(self, validation_accuracies, training_start) -> bool:
-        current_val_acc = validation_accuracies[-1]
         val_acc_target = self.params.val_acc_target
-        if val_acc_target is not None and current_val_acc >= val_acc_target:
-            print(f"Exceeded target validation accuracy -- stopping training.")
-            return True
+        if val_acc_target is not None and self.should_record_metrics():
+            current_val_acc = validation_accuracies[-1]
+            if current_val_acc >= val_acc_target:
+                print(f"Exceeded target validation accuracy -- stopping training.")
+                return True
         running_time_seconds = time.perf_counter() - training_start
         time_limit_seconds = self.params.time_limit_seconds
         if time_limit_seconds is not None and running_time_seconds >= time_limit_seconds:
