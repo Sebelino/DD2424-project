@@ -4,15 +4,18 @@ from dataclasses import asdict
 from typing import Dict, Any
 
 import numpy as np
+from scipy.stats import stats
+from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
 from augmentation import AugmentationParams
-from datasets import DatasetParams
+from datasets import DatasetParams, load_dataset
+from determinism import Determinism
 from freezing import MaskedFineTuningParams
 from plotting import make_run_comparison_plot, make_run_comparison_ci_plot, plot_elapsed
-from run import run, run_multiple
+from run import run, run_multiple, try_loading_trainer
 from training import TrainingResult, TrainParams, Trainer, NagParams
-from util import shorten_label
+from util import shorten_label, suppress_weights_only_warning
 
 
 def make_paramset_string(params: dict) -> str:
@@ -262,3 +265,50 @@ def show_misclassified(misclassified_samples):
 def evaluate_elapsed_time(results_per_paramset: Dict[str, Dict[str, TrainingResult]], baseline_label: str):
     times = {psl: [r.training_elapsed for _, r in v.items()] for psl, v in results_per_paramset.items()}
     plot_elapsed(baseline_label, times)
+
+
+def evaluate_final_test_accuracy(
+        dataset_params: DatasetParams,
+        training_params: TrainParams,
+        determinism: Determinism,
+        trials: int = 1,
+        display_misclassified=False
+):
+    suppress_weights_only_warning()
+    eval_params = training_params.copy()
+    test_dataset = load_dataset("test", Trainer.make_base_transform(eval_params))
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=dataset_params.batch_size,
+        shuffle=False,
+        num_workers=3,
+        persistent_workers=False,
+        pin_memory=True,
+        worker_init_fn=Determinism.data_loader_worker_init_fn(dataset_params.shuffler_seed),
+    )
+    print(f"Test size: {len(test_loader.dataset)}")
+
+    misclassified_samples = []
+    test_accs = []
+    for i in range(trials):
+        trainer = try_loading_trainer(dataset_params, eval_params, determinism)
+        if display_misclassified:
+            test_acc, misclassified_samples = evaluate_test_accuracy_and_misclassified(
+                trainer,
+                test_loader,
+                test_dataset
+            )
+        else:
+            test_acc = evaluate_test_accuracy(trainer, test_loader)
+        print(f"Test Accuracy: {test_acc:.2f} %")
+        test_accs.append(test_acc)
+        eval_params.seed += 1
+
+    test_acc_mean = np.mean(test_accs)
+    print(f"Test Accuracy Mean: {test_acc_mean:.2f} %")
+    test_acc_se = stats.sem(np.array(test_accs))
+    print(f"Test Accuracy Standard Error: {test_acc_se:.2f} percentage points")
+
+    if display_misclassified:
+        print(f"Number of misclassified samples: {len(misclassified_samples)}")
+        show_misclassified(misclassified_samples)
