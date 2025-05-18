@@ -13,22 +13,22 @@ else:
 
 
 def make_unfreezings(unfreezing_epochs, model):
-    # Define layers to gradually unfreeze
-    layer_names = [model.layer4, model.layer3]  # layer4 = last block
+    # Define layers to gradually unfreeze from last to first
+    layer_labels = ["layer4", "layer3", "layer2", "layer1", "conv1"]
+    layer_modules = [model.layer4, model.layer3, model.layer2, model.layer1, model.conv1]
+
     if unfreezing_epochs in {None, ()}:
-        return dict()
+        return {}
+
     unfreezing_epochs = sorted(unfreezing_epochs)
-    if len(unfreezing_epochs) == 1:
-        return {
-            unfreezing_epochs[0]: {layer_names[0]}
-        }
-    if len(unfreezing_epochs) == 2:
-        return {
-            unfreezing_epochs[0]: ("layer4", layer_names[0]),
-            unfreezing_epochs[1]: ("layer3", layer_names[1]),
-        }
-    else:
-        raise NotImplementedError()
+    if len(unfreezing_epochs) > len(layer_modules):
+        raise ValueError(f"Cannot unfreeze more than {len(layer_modules)} layers, got {len(unfreezing_epochs)}.")
+
+    return {
+        unfreezing_epochs[i]: (layer_labels[i], layer_modules[i])
+        for i in range(len(unfreezing_epochs))
+    }
+
 
 
 def maybe_unfreeze_last_layers(l, model: nn.Module):
