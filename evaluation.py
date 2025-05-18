@@ -1,3 +1,4 @@
+import gc
 import os
 import shutil
 from dataclasses import asdict
@@ -277,20 +278,20 @@ def evaluate_final_test_accuracy(
     suppress_weights_only_warning()
     eval_params = training_params.copy()
     test_dataset = load_dataset("test", Trainer.make_base_transform(eval_params))
-    test_loader = DataLoader(
-        test_dataset,
-        batch_size=dataset_params.batch_size,
-        shuffle=False,
-        num_workers=3,
-        persistent_workers=False,
-        pin_memory=True,
-        worker_init_fn=Determinism.data_loader_worker_init_fn(dataset_params.shuffler_seed),
-    )
-    print(f"Test size: {len(test_loader.dataset)}")
+    print(f"Test size: {len(test_dataset)}")
 
     misclassified_samples = []
     test_accs = []
     for i in range(trials):
+        test_loader = DataLoader(
+            test_dataset,
+            batch_size=dataset_params.batch_size,
+            shuffle=False,
+            num_workers=0,  # Avoids the nasty "can only test a child process" errors
+            persistent_workers=False,
+            pin_memory=True,
+            worker_init_fn=Determinism.data_loader_worker_init_fn(dataset_params.shuffler_seed),
+        )
         trainer = try_loading_trainer(dataset_params, eval_params, determinism)
         if display_misclassified:
             test_acc, misclassified_samples = evaluate_test_accuracy_and_misclassified(
@@ -300,7 +301,7 @@ def evaluate_final_test_accuracy(
             )
         else:
             test_acc = evaluate_test_accuracy(trainer, test_loader)
-        print(f"Test Accuracy: {test_acc:.2f} %")
+        print(f"Test Accuracy: {test_acc:.3f} %")
         test_accs.append(test_acc)
         eval_params.seed += 1
 
