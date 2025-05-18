@@ -280,8 +280,13 @@ def evaluate_final_test_accuracy(
         display_misclassified=False
 ):
     suppress_weights_only_warning()
-    eval_params = training_params.copy()
-    test_dataset = load_dataset("test", Trainer.make_base_transform(eval_params), dataset_params.target_types)
+    dataset_params = dataset_params.copy()
+    # train on the full train+val set
+    dataset_params.validation_set_fraction = 0
+    training_params = training_params.copy()
+    # don't compute val acc while training
+    training_params.validation_freq = 0
+    test_dataset = load_dataset("test", Trainer.make_base_transform(training_params), dataset_params.target_types)
     print(f"Test size: {len(test_dataset)}")
 
     misclassified_samples = []
@@ -289,14 +294,15 @@ def evaluate_final_test_accuracy(
     for i in range(trials):
         test_loader = DataLoader(
             test_dataset,
-            batch_size=dataset_params.batch_size,
-            shuffle=False,
-            num_workers=0,  # Avoids the nasty "can only test a child process" errors
-            persistent_workers=False,
+            batch_size=dataset_params.batch_size, #default 1
+            #shuffle=False, #default False
+            #num_workers=0, #default 0
+            #persistent_workers=False, #default False
             pin_memory=True,
-            worker_init_fn=Determinism.data_loader_worker_init_fn(dataset_params.shuffler_seed),
+            # worker_init_fn does not get called if num_workers=0
+            #worker_init_fn=Determinism.data_loader_worker_init_fn(dataset_params.shuffler_seed),
         )
-        trainer = try_loading_trainer(dataset_params, eval_params, determinism)
+        trainer = try_loading_trainer(dataset_params, training_params, determinism)
         if display_misclassified:
             test_acc, misclassified_samples = evaluate_test_accuracy_and_misclassified(
                 trainer,
@@ -304,10 +310,10 @@ def evaluate_final_test_accuracy(
                 test_dataset
             )
         else:
-            test_acc = evaluate_test_accuracy(trainer, test_loader)
+            test_acc = evaluate_test_accuracy(trainer, test_loader) # deterministic
         print(f"Test Accuracy: {test_acc:.3f} %")
         test_accs.append(test_acc)
-        eval_params.seed += 1
+        training_params.seed += 1
 
     test_acc_mean = np.mean(test_accs)
     print(f"Test Accuracy Mean: {test_acc_mean:.2f} %")
