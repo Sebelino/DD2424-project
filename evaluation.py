@@ -1,4 +1,3 @@
-import gc
 import os
 import shutil
 from dataclasses import asdict
@@ -112,10 +111,10 @@ def run_with_different_seeds(dataset_params: DatasetParams, training_params: Tra
     training_params = training_params.copy()
     label_to_result = dict()
     for i in range(trials):
-        training_params.seed += 1
         result = run(dataset_params, training_params)
         label = f"Val acc seed={training_params.seed}"
         label_to_result[label] = result
+        training_params.seed += 1
     evaluate_runs(label_to_result)
 
 
