@@ -45,8 +45,7 @@ def suppress_weights_only_warning():
     )
 
 
-def shorten_label(label):
-    limit = 50
+def shorten_label(label, limit=50):
     if len(label) > limit:
         label = label[:limit - 1] + "…"
     return label

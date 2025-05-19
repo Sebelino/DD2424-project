@@ -107,44 +107,60 @@ def make_run_comparison_ci_plot(
 
 def plot_elapsed(baseline_label, times: dict[str, list[float]]):
     num_runs = len(times[baseline_label])
-
     labels = list(times.keys())
 
+    # remove baseline to compute diffs
     times_no_baseline = copy.deepcopy(times)
     del times_no_baseline[baseline_label]
     diff_labels = list(times_no_baseline.keys())
 
-    t_crit = stats.t.ppf(0.975, df=num_runs - 1)
+    # critical t for 95% CI
+    t_crit = stats.t.ppf(0.975, df=max(num_runs - 1, 1))
+
+    # compute means and CIs (guarding against num_runs <= 1)
     means = {}
     cis = {}
     for label, vals in times.items():
-        arr = np.array(vals)
-        means[label] = arr.mean()
-        cis[label] = t_crit * arr.std(ddof=1) / np.sqrt(num_runs)
+        arr = np.array(vals, dtype=float)
+        means[label] = np.nanmean(arr)
+        if num_runs > 1:
+            # sample std
+            s = np.nanstd(arr, ddof=1)
+            cis[label] = float(t_crit * s / np.sqrt(num_runs))
+        else:
+            cis[label] = 0.0
 
-    base_arr = np.array(times[baseline_label])
+    # compute bootstrap differences (if only one run, CI is zero)
+    base_arr = np.array(times[baseline_label], dtype=float)
     diffs = {}
     n_boot = 5000
     for label in diff_labels:
-        arr = np.array(times[label])
+        arr = np.array(times[label], dtype=float)
         delta = arr - base_arr
-        boot = np.random.choice(delta, size=(n_boot, num_runs), replace=True).mean(axis=1)
-        low, high = np.percentile(boot, [2.5, 97.5])
-        diffs[label] = (delta.mean(), delta.mean() - low, high - delta.mean())
+        mean_delta = float(np.nanmean(delta))
+        if num_runs > 1:
+            boot_samples = np.random.choice(delta, (n_boot, num_runs), replace=True).mean(axis=1)
+            low, high = np.percentile(boot_samples, [2.5, 97.5])
+            diffs[label] = (mean_delta, mean_delta - low, high - mean_delta)
+        else:
+            # no variability with one sample
+            diffs[label] = (mean_delta, 0.0, 0.0)
 
+    # prepare colors
     cmap = plt.get_cmap('tab10')
     colors = cmap.colors[:len(labels)]
     color_map = dict(zip(labels, colors))
 
+    # make the two‐panel plot
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
 
+    # panel 1: raw times + CIs
     for idx, label in enumerate(labels):
-        arr = np.array(times[label])
-        jitter = (np.random.rand(num_runs) - .5) * .2
-        ax1.scatter(
-            idx + jitter, arr,
-            color=color_map[label], alpha=0.6
-        )
+        arr = np.array(times[label], dtype=float)
+        mask = ~np.isnan(arr)
+        if mask.any():
+            jitter = (np.random.rand(mask.sum()) - 0.5) * 0.2
+            ax1.scatter(idx + jitter, arr[mask], color=color_map[label], alpha=0.6)
         ax1.errorbar(
             idx, means[label],
             yerr=cis[label],
@@ -154,10 +170,11 @@ def plot_elapsed(baseline_label, times: dict[str, list[float]]):
     ax1.plot(range(len(labels)), [means[l] for l in labels],
              linestyle='--', color='gray')
     ax1.set_xticks(range(len(labels)))
-    ax1.set_xticklabels(labels)
+    ax1.set_xticklabels([shorten_label(label, limit=10) for label in labels])
     ax1.set_ylabel('Elapsed time (s)')
     ax1.set_title('Timing across parameter settings')
 
+    # panel 2: bootstrap differences
     x = np.arange(1, len(labels))
     for xi, label in zip(x, diff_labels):
         m, err_low, err_high = diffs[label]
@@ -169,7 +186,7 @@ def plot_elapsed(baseline_label, times: dict[str, list[float]]):
 
     ax2.axhline(0, linestyle='--', color='gray')
     ax2.set_xticks(x)
-    ax2.set_xticklabels(diff_labels)
+    ax2.set_xticklabels([shorten_label(label, limit=10) for label in diff_labels])
     ax2.set_ylabel(f'Mean difference vs {baseline_label} (s)')
     ax2.set_title('Bootstrap 95% CIs of differences')
 

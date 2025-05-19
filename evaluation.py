@@ -47,12 +47,16 @@ def tweak(params: TrainParams, overrides: dict[str, Any]):
             else:
                 raise NotImplementedError
         setattr(params, k, v)
-    overridestr = make_paramset_string(overrides)
-    return overridestr, params
+    return params
 
 
-def override_param_sets(training_params: TrainParams, overrides_list: list[dict[str, Any]]):
-    param_sets = dict([tweak(training_params, o) for o in overrides_list])
+def override_param_sets(training_params: TrainParams, overrides: list[dict[str, Any]] | dict[str, dict[str, Any]]):
+    if isinstance(overrides, list):
+        param_sets = {make_paramset_string(o): tweak(training_params, o) for o in overrides}
+    elif isinstance(overrides, dict):
+        param_sets = {label: tweak(training_params, param_set) for label, param_set in overrides.items()}
+    else:
+        raise ValueError()
     return param_sets
 
 
@@ -294,13 +298,13 @@ def evaluate_final_test_accuracy(
     for i in range(trials):
         test_loader = DataLoader(
             test_dataset,
-            batch_size=dataset_params.batch_size, #default 1
-            #shuffle=False, #default False
-            #num_workers=0, #default 0
-            #persistent_workers=False, #default False
+            batch_size=dataset_params.batch_size,  # default 1
+            # shuffle=False, #default False
+            # num_workers=0, #default 0
+            # persistent_workers=False, #default False
             pin_memory=True,
             # worker_init_fn does not get called if num_workers=0
-            #worker_init_fn=Determinism.data_loader_worker_init_fn(dataset_params.shuffler_seed),
+            # worker_init_fn=Determinism.data_loader_worker_init_fn(dataset_params.shuffler_seed),
         )
         trainer = try_loading_trainer(dataset_params, training_params, determinism)
         if display_misclassified:
@@ -310,7 +314,7 @@ def evaluate_final_test_accuracy(
                 test_dataset
             )
         else:
-            test_acc = evaluate_test_accuracy(trainer, test_loader) # deterministic
+            test_acc = evaluate_test_accuracy(trainer, test_loader)  # deterministic
         print(f"Test Accuracy: {test_acc:.3f} %")
         test_accs.append(test_acc)
         training_params.seed += 1

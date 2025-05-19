@@ -78,7 +78,8 @@ class TrainParams:
     val_acc_target: Optional[float] = None
     # Masked fine-tuning
     # mft: MaskedFineTuningParams = MaskedFineTuningParams(enabled=False, k=0)
-    mft: MaskedFineTuningParams = field(default_factory=lambda: MaskedFineTuningParams(enabled=False, k=0))
+    mft: MaskedFineTuningParams = field(
+        default_factory=lambda: MaskedFineTuningParams(enabled=False, k=0, impl="theirs"))
     # Finetune l layers simultaneously
     unfreeze_last_l_blocks: Optional[int] = None
     # Unsupervised learning params
@@ -483,9 +484,16 @@ class Trainer:
         suppress_weights_only_warning()
         if not self.masks:
             # Parameter selection in GPS
-            self.masks = compute_gradient_masks(
-                self.model, self.labelled_train_loader, self.device, self.params.mft.k
-            )
+            if self.params.mft.impl == "ours":
+                self.masks, _ = compute_gradient_masks(
+                    self.model, self.labelled_train_loader, self.device, self.params.mft.k
+                )
+            elif self.params.mft.impl == "theirs":
+                self.masks, _ = compute_gradient_masks(
+                    self.model, self.labelled_train_loader, self.device, self.params.mft.k
+                )
+            else:
+                raise NotImplementedError
         # Determine which modules are currently unfrozen (prefixes)
         allowed = set(
             name.split('.')[0]
