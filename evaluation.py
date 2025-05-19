@@ -4,11 +4,13 @@ from dataclasses import asdict
 from typing import Dict, Any
 
 import numpy as np
+from joblib import Memory
 from scipy.stats import stats
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
 from augmentation import AugmentationParams
+from caching import invalidate_cache_entry
 from datasets import DatasetParams, load_dataset
 from determinism import Determinism
 from freezing import MaskedFineTuningParams
@@ -16,6 +18,13 @@ from plotting import make_run_comparison_plot, make_run_comparison_ci_plot, plot
 from run import run, run_multiple, try_loading_trainer
 from training import TrainingResult, TrainParams, Trainer, NagParams
 from util import shorten_label, suppress_weights_only_warning
+
+USE_CACHE = True
+
+if USE_CACHE:
+    memory = Memory("./runs/joblib_cache", verbose=0)
+else:
+    memory = Memory(location=None, verbose=0)
 
 
 def make_paramset_string(params: dict) -> str:
@@ -281,7 +290,8 @@ def evaluate_final_test_accuracy(
         training_params: TrainParams,
         determinism: Determinism,
         trials: int = 1,
-        display_misclassified=False
+        display_misclassified=False,
+        invalidate=False,
 ):
     suppress_weights_only_warning()
     dataset_params = dataset_params.copy()
@@ -296,34 +306,52 @@ def evaluate_final_test_accuracy(
     misclassified_samples = []
     test_accs = []
     for i in range(trials):
-        test_loader = DataLoader(
-            test_dataset,
-            batch_size=dataset_params.batch_size,  # default 1
-            # shuffle=False, #default False
-            # num_workers=0, #default 0
-            # persistent_workers=False, #default False
-            pin_memory=True,
-            # worker_init_fn does not get called if num_workers=0
-            # worker_init_fn=Determinism.data_loader_worker_init_fn(dataset_params.shuffler_seed),
-        )
-        trainer = try_loading_trainer(dataset_params, training_params, determinism)
-        if display_misclassified:
-            test_acc, misclassified_samples = evaluate_test_accuracy_and_misclassified(
-                trainer,
-                test_loader,
-                test_dataset
-            )
-        else:
-            test_acc = evaluate_test_accuracy(trainer, test_loader)  # deterministic
-        print(f"Test Accuracy: {test_acc:.3f} %")
+        args = (dataset_params, training_params, determinism, test_dataset, display_misclassified)
+        invalidate_cache_entry(evaluate_cached, args, invalidate=invalidate)
+        test_acc, misclassified_samples = evaluate_cached(dataset_params, training_params, determinism,
+                                                          display_misclassified, test_dataset)
         test_accs.append(test_acc)
         training_params.seed += 1
 
     test_acc_mean = np.mean(test_accs)
     print(f"Test Accuracy Mean: {test_acc_mean:.2f} %")
-    test_acc_se = stats.sem(np.array(test_accs))
-    print(f"Test Accuracy Standard Error: {test_acc_se:.2f} percentage points")
+    if len(test_accs) >= 2:
+        test_acc_se = stats.sem(np.array(test_accs))
+        print(f"Test Accuracy Standard Error: {test_acc_se:.2f} percentage points")
 
     if display_misclassified:
         print(f"Number of misclassified samples: {len(misclassified_samples)}")
         show_misclassified(misclassified_samples)
+
+
+@memory.cache(ignore=["test_dataset"])
+def evaluate_cached(
+        dataset_params: DatasetParams,
+        training_params: TrainParams,
+        determinism: Determinism,
+        display_misclassified: bool,
+        test_dataset
+):
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=dataset_params.batch_size,  # default 1
+        # shuffle=False, #default False
+        # num_workers=0, #default 0
+        # persistent_workers=False, #default False
+        pin_memory=True,
+        # worker_init_fn does not get called if num_workers=0
+        # worker_init_fn=Determinism.data_loader_worker_init_fn(dataset_params.shuffler_seed),
+    )
+
+    misclassified_samples = []
+    trainer = try_loading_trainer(dataset_params, training_params, determinism)
+    if display_misclassified:
+        test_acc, misclassified_samples = evaluate_test_accuracy_and_misclassified(
+            trainer,
+            test_loader,
+            test_dataset
+        )
+    else:
+        test_acc = evaluate_test_accuracy(trainer, test_loader)  # deterministic
+    print(f"Test Accuracy: {test_acc:.3f} %")
+    return test_acc, misclassified_samples
