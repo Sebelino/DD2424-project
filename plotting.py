@@ -60,7 +60,7 @@ def make_run_comparison_ci_plot(
         if trials >= 2:
             ax_train.fill_between(
                 update_steps, lower_vals, upper_vals, alpha=0.3,
-                label=f'{display_label} {int(100 * ci)}% CI'
+                #label=f'{display_label} {int(100 * ci)}% CI'
             )
 
     ax_train.set_xlabel('Update step')
@@ -87,7 +87,7 @@ def make_run_comparison_ci_plot(
         if trials >= 2:
             ax_val.fill_between(
                 update_steps, lower_vals, upper_vals, alpha=0.3,
-                label=f'{display_label} {int(100 * ci)}% CI'
+                #label=f'{display_label} {int(100 * ci)}% CI'
             )
 
     ax_val.set_xlabel('Update step')
@@ -161,16 +161,16 @@ def plot_elapsed(baseline_label, times: dict[str, list[float]]):
         if mask.any():
             jitter = (np.random.rand(mask.sum()) - 0.5) * 0.2
             ax1.scatter(idx + jitter, arr[mask], color=color_map[label], alpha=0.6)
-        ax1.errorbar(
-            idx, means[label],
-            yerr=cis[label],
-            fmt='o', color=color_map[label], capsize=5
-        )
+        # ax1.errorbar(
+        #    idx, means[label],
+        #    yerr=cis[label],
+        #    fmt='o', color=color_map[label], capsize=5
+        # )
 
     ax1.plot(range(len(labels)), [means[l] for l in labels],
              linestyle='--', color='gray')
     ax1.set_xticks(range(len(labels)))
-    ax1.set_xticklabels([shorten_label(label, limit=10) for label in labels])
+    ax1.set_xticklabels([shorten_label(label, limit=16).replace(" ", "\n") for label in labels])
     ax1.set_ylabel('Elapsed time (s)')
     ax1.set_title('Timing across parameter settings')
 
@@ -186,7 +186,7 @@ def plot_elapsed(baseline_label, times: dict[str, list[float]]):
 
     ax2.axhline(0, linestyle='--', color='gray')
     ax2.set_xticks(x)
-    ax2.set_xticklabels([shorten_label(label, limit=10) for label in diff_labels])
+    ax2.set_xticklabels([shorten_label(label, limit=16).replace(" ", "\n") for label in diff_labels])
     ax2.set_ylabel(f'Mean difference vs {baseline_label} (s)')
     ax2.set_title('Bootstrap 95% CIs of differences')
 
