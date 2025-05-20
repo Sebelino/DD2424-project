@@ -130,6 +130,8 @@ class TrainingResult:
     epochs: Tuple[int, ...]
     training_elapsed: float
     training_pre_loop_elapsed: float
+    mft_selected_param_count: int
+    mft_total_param_count: int
 
     def pprint(self):
         return dumps_inline_lists(asdict(self))
@@ -204,6 +206,7 @@ class Trainer:
         self.unlabelled_train_loader = None
         self.val_loader = None
         self.masks: dict[str, torch.Tensor] = {}
+        self.masks_summary: dict[str, Any] = {}
         self.scheduler = None
         if getattr(params, "scheduler_type", None) == "plateau":
             self.scheduler = ReduceLROnPlateau(
@@ -468,6 +471,8 @@ class Trainer:
         terminate_workers([self.labelled_train_loader, self.unlabelled_train_loader, self.val_loader])
 
         epochs = range(1, num_epochs + 1)
+        mft_selected_param_count = sum(a for a, b, c in self.masks_summary.values())
+        mft_total_param_count = sum(b for a, b, c in self.masks_summary.values())
         training_elapsed = time.perf_counter() - training_start
         return TrainingResult(
             training_losses=tuple(self.training_losses),
@@ -477,6 +482,8 @@ class Trainer:
             update_steps=tuple(self.recorded_update_steps),
             training_elapsed=training_elapsed,
             training_pre_loop_elapsed=training_pre_loop_elapsed,
+            mft_selected_param_count=mft_selected_param_count,
+            mft_total_param_count=mft_total_param_count,
         )
 
     def maybe_mask_fine_tune(self):
@@ -486,11 +493,11 @@ class Trainer:
         if not self.masks:
             # Parameter selection in GPS
             if self.params.mft.impl == "ours":
-                self.masks, _ = compute_gradient_masks(
+                self.masks, self.masks_summary = compute_gradient_masks(
                     self.model, self.labelled_train_loader, self.device, self.params.mft.k
                 )
             elif self.params.mft.impl == "theirs":
-                self.masks, _ = prune(
+                self.masks, self.masks_summary = prune(
                     self.model, self.labelled_train_loader, self.device, self.params.mft.k
                 )
             else:
