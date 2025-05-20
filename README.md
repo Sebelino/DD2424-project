@@ -3,6 +3,9 @@
 <p align="center">
 <img src="https://github.com/user-attachments/assets/e0c0d99f-fe50-42b1-9ff7-d2361992d9c3" alt="project icon" width="256" />
 </p>
+<p align="center">
+  <em>A Hybrid Semi-Supervised and Masked Fine-Tuning Framework for Pet Recognition</em>
+</p>
 
 # Usage
 
