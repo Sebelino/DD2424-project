@@ -306,7 +306,7 @@ def evaluate_final_test_accuracy(
     misclassified_samples = []
     test_accs = []
     for i in range(trials):
-        args = (dataset_params, training_params, determinism, test_dataset, display_misclassified)
+        args = (dataset_params, training_params, determinism, display_misclassified, test_dataset)
         invalidate_cache_entry(evaluate_cached, args, invalidate=invalidate)
         test_acc, misclassified_samples = evaluate_cached(dataset_params, training_params, determinism,
                                                           display_misclassified, test_dataset)
