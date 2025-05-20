@@ -28,10 +28,13 @@ def test_compute_gradient_masks():
     masks, summary = compute_gradient_masks_no_cache(model, dl, device, K)
 
     print(json.dumps(summary))
+    selected_param_count = sum(a for a, b, c in summary.values())
+    total_param_count = sum(b for a, b, c in summary.values())
     assert summary["conv1.weight"] == (K * 64, 9408, (64, 3, 7, 7))
     assert summary["bn1.weight"] == (64, 64, (64,))
-    print(summary["fc.bias"])
     assert summary["fc.bias"] == (0, 37, (37,))
+    assert selected_param_count == 182265
+    assert total_param_count == 23583845
 
     # Assertions:
     for name, param in model.named_parameters():
