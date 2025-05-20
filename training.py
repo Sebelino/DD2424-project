@@ -232,7 +232,8 @@ class Trainer:
                 p=params.augmentation.dropout_rate if params.augmentation and params.augmentation.dropout_rate else 0.0),
             nn.Linear(num_features, params.num_classes)
         )
-        model = torch.compile(model)
+        if not torch.cuda.is_available():
+            model = torch.compile(model)
         return model.to(device)
 
     @classmethod
