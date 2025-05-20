@@ -17,7 +17,7 @@ import augmentation
 from datasets import DatasetParams, terminate_workers
 from determinism import Determinism
 from freezing import compute_gradient_masks, apply_masks_and_freeze, MaskedFineTuningParams, make_unfreezings, \
-    maybe_unfreeze_last_layers
+    maybe_unfreeze_last_layers, prune
 from util import dumps_inline_lists, suppress_weights_only_warning
 
 
@@ -490,7 +490,7 @@ class Trainer:
                     self.model, self.labelled_train_loader, self.device, self.params.mft.k
                 )
             elif self.params.mft.impl == "theirs":
-                self.masks, _ = compute_gradient_masks(
+                self.masks, _ = prune(
                     self.model, self.labelled_train_loader, self.device, self.params.mft.k
                 )
             else:
