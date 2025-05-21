@@ -8,9 +8,7 @@
 </p>
 
 <p align="center">
-  <a href="LICENSE">
-    <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT" />
-  </a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT" /></a>
   <img src="https://img.shields.io/badge/python-3.8%2B-green.svg" alt="Python Version" />
   <img src="https://img.shields.io/badge/pytorch-%3E%3D1.9-orange.svg" alt="PyTorch Version" />
 </p>
